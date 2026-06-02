@@ -1,0 +1,17 @@
+{
+  "name": "ripple",
+  "private": true,
+  "version": "0.1.0",
+  "description": "라이브 변경 영향 분석 — VS Code 익스텐션 + AI 백엔드 두뇌 (any-to-any)",
+  "workspaces": ["backend", "extension", "sample-app"],
+  "scripts": {
+    "demo": "concurrently -n brain,app -c blue,green \"npm run dev -w backend\" \"npm run dev -w sample-app\"",
+    "backend": "npm run dev -w backend",
+    "app": "npm run dev -w sample-app",
+    "build": "npm run build -w backend && npm run build -w extension",
+    "package": "npm run build -w extension && cd extension && npx --yes @vscode/vsce package --no-dependencies -o ripple.vsix"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

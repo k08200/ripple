@@ -1,0 +1,71 @@
+{
+  "name": "ripple",
+  "displayName": "Ripple — Live Change Impact",
+  "description": "저장할 때마다 AI가 변경 영향을 읽어 영향받는 팀원에게 찔러줍니다. (any-to-any)",
+  "version": "0.1.0",
+  "publisher": "ripple",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/k08200/ripple.git" },
+  "main": "./dist/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "configuration": {
+      "title": "Ripple",
+      "properties": {
+        "ripple.backendUrl": {
+          "type": "string",
+          "default": "ws://localhost:7077",
+          "description": "Ripple 백엔드 WebSocket URL"
+        },
+        "ripple.userId": {
+          "type": "string",
+          "default": "",
+          "description": "팀에서 나를 식별하는 이름 (비우면 OS 사용자명)"
+        },
+        "ripple.previewUrl": {
+          "type": "string",
+          "default": "http://localhost:5173",
+          "description": "Live Preview 패널이 띄울 실제 프론트 앱 URL (dev 서버 또는 배포 미리보기)"
+        }
+      }
+    },
+    "commands": [
+      { "command": "ripple.reconnect", "title": "Ripple: 백엔드 재연결" },
+      { "command": "ripple.openPreview", "title": "Ripple: Live Preview 열기", "icon": "$(preview)" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "ripple.openPreview", "when": "view == ripple.feed", "group": "navigation" }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "ripple", "title": "Ripple", "icon": "media/ripple.svg" }
+      ]
+    },
+    "views": {
+      "ripple": [
+        { "id": "ripple.feed", "name": "변경 피드", "type": "webview" }
+      ]
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --outfile=dist/extension.js",
+    "build": "npm run typecheck && npm run bundle",
+    "watch": "npm run bundle -- --watch",
+    "vscode:prepublish": "npm run build"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}

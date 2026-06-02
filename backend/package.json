@@ -1,0 +1,21 @@
+{
+  "name": "ripple-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Ripple 두뇌 — 변경 수집 + AI 영향 분석 + 영향받는 사람에게 라우팅",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
