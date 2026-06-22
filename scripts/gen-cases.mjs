@@ -121,6 +121,30 @@ for (const c of commits) {
     }
     if (affectedRel.length === 0) continue; // 측정 가능한 import-영향 없음 → 버림
 
+    // 윈도우 GT: 변경 직후 GEN_WINDOW 커밋 안에서 F 를 import 하며 고쳐진 파일도 '진짜 영향' 으로 인정.
+    // 단일-커밋 GT 가 놓치는 "조금 나중에 고친 caller" 를 credit → 진짜 precision 측정용.
+    const WINDOW = Number(process.env.GEN_WINDOW ?? 0);
+    if (WINDOW > 0) {
+      const seen = new Set(affectedRel);
+      const later = git(["log", "--reverse", "--pretty=%H", `${c}..HEAD`]).split("\n").filter(Boolean).slice(0, WINDOW);
+      for (const L of later) {
+        const mod = git(["diff", "--name-status", `${L}^`, L]).split("\n").filter(Boolean)
+          .map((x) => x.split("\t"))
+          .filter(([s, p]) => s === "M" && /\.ts$/.test(p) && !/\.d\.ts$/.test(p))
+          .map(([, p]) => p);
+        for (const o of mod) {
+          const full = `autobe/${o}`;
+          if (o === F || seen.has(full)) continue;
+          const content = git(["show", `${L}^:${o}`]) || git(["show", `${L}:${o}`]);
+          if (content && importsBase(extractIndex(full, content), base)) {
+            seen.add(full);
+            affectedRel.push(full);
+            candIndex.push(extractIndex(full, content));
+          }
+        }
+      }
+    }
+
     // distractor: 이 커밋과 무관한 파일들 (precision 테스트용). F 를 import 하지 않아야 정상.
     const pool = allTsAtHead.filter((p) => p !== F && !others.includes(p));
     for (let k = 0; k < pool.length && candIndex.length < others.length + DISTRACTORS; k += Math.max(1, Math.floor(pool.length / DISTRACTORS))) {

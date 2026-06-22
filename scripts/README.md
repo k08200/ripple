@@ -62,6 +62,12 @@ node scripts/eval.mjs scripts/cases.real.json       # 실측 채점
 refHit-only 로 좁혀 검증: R100→19, P74→36 폭락 → **importHit 이 recall 의 대부분을 짊어짐**(바뀐 심볼이
 본문에서 쓰이면 named-import refs 에 안 잡힘). 즉 recall 은 14·40 양쪽 견고하게 100%, precision 실측 74%(실제는 더 높음).
 
+**precision 의 진짜 값 측정** (`GEN_WINDOW=6 node scripts/gen-cases.mjs ...`): GT 를 "변경 직후 6커밋 안에서
+고친 importer" 까지 넓히면 graph **P74→78%**. +4p 만 오름 = FP 일부만 "나중에 고친 caller"(GT 하한)이고,
+**대부분은 "F 를 import 하지만 바뀐 그 심볼은 안 쓰는" 파일** — basename-import 매칭의 구조적 천장.
+더 올리려면 importer 별 심볼-사용을 AST 로 분석해야 하는데, refHit-only 는 recall 을 죽이므로(19%) MVP 엔 과함.
+→ **graph 진짜 precision ~78%, recall 견고 100%. 경량 의존매칭의 천장이 거기다.**
+
 autobe(2339 커밋) 14건 실측 결과:
 
 | provider | Precision | Recall | F1 | Severity |
