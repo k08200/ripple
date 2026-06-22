@@ -133,6 +133,9 @@ export class GraphProvider implements Provider {
     }
 
     // 확신도 순(직접 참조 > import)으로 정렬 후 캡. 캡에 걸려도 강한 신호가 살아남는다.
+    // 주의: importHit(파일을 import) 가 recall 의 대부분을 짊어진다 — 바뀐 심볼이
+    // named-import 가 아니라 본문에서 쓰이면 refs 에 안 잡히기 때문. refHit-only 로
+    // 좁히면 R100→19 로 폭락(측정됨). 그래서 둘 다 유지한다.
     const affected = [...refHits, ...importHits].slice(0, MAX_AFFECTED);
 
     const verb = removed.length > added.length ? "삭제/축소" : "수정";

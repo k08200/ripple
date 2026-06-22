@@ -56,6 +56,12 @@ node scripts/gen-cases.mjs /path/to/real-repo 14   # → scripts/cases.real.json
 node scripts/eval.mjs scripts/cases.real.json       # 실측 채점
 ```
 
+**표본 크기 주의 (정직)**: 14건에선 graph P94 였지만, **40건으로 늘리면 P74 / R100 / Sev73**.
+14건 P94 는 낙관적 표본이었다. 단, 이 P74 는 **하한선**이다 — graph 의 "FP" 는 대부분
+"그 모듈을 import 하는 진짜 의존 파일인데 해당 단일 커밋에선 안 고쳐진 것"(단일-커밋 GT 의 한계)이다.
+refHit-only 로 좁혀 검증: R100→19, P74→36 폭락 → **importHit 이 recall 의 대부분을 짊어짐**(바뀐 심볼이
+본문에서 쓰이면 named-import refs 에 안 잡힘). 즉 recall 은 14·40 양쪽 견고하게 100%, precision 실측 74%(실제는 더 높음).
+
 autobe(2339 커밋) 14건 실측 결과:
 
 | provider | Precision | Recall | F1 | Severity |
