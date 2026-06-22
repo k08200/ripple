@@ -12,7 +12,7 @@
     "brain": "node backend/dist/server.js",
     "sim": "node scripts/sim.mjs",
     "eval": "node scripts/eval.mjs",
-    "test": "npm run build -w backend && node --test backend/test/*.mjs",
+    "test": "npm run build -w backend && node --no-warnings --test backend/test/*.mjs extension/test/*.mjs",
     "package": "npm run build -w extension && cd extension && npx --yes @vscode/vsce package --no-dependencies -o ripple.vsix"
   },
   "devDependencies": {

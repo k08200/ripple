@@ -6,3 +6,4 @@ dist/
 demo/node_modules/
 .env
 scripts/cases.real.json
+*.vsix
