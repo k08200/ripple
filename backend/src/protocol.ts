@@ -36,6 +36,8 @@ export interface ChangeMessage {
   file: string;
   /** 라인 단위 unified-ish diff 텍스트. */
   diff: string;
+  /** 저장 직후 이 파일의 갱신된 심볼 인덱스(옵션) — 세션 중 인덱스를 최신으로 유지. */
+  index?: FileIndex;
 }
 
 export type ClientMessage = RegisterMessage | ChangeMessage;

@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { ClientMessage, ImpactMessage } from "./protocol.js";
 import type { KnownFile } from "./providers/provider.js";
 import { impactTouches } from "./match.js";
+import { upsertIndex } from "./index-store.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
@@ -135,9 +136,19 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "change") {
-      // 등록 정보로 files 갱신해두면 분석 후보가 최신으로 유지됨.
+      // 등록 정보로 files/인덱스 갱신 → 분석 후보가 세션 중에도 최신으로 유지됨.
       const c = clients.get(ws);
-      if (c) c.files.add(msg.file);
+      if (c) {
+        c.files.add(msg.file);
+        if (msg.index) {
+          c.index = upsertIndex(c.index, {
+            path: `${msg.repo}/${msg.file}`,
+            exports: msg.index.exports ?? [],
+            imports: msg.index.imports ?? [],
+            refs: msg.index.refs ?? [],
+          });
+        }
+      }
       void handleChange(msg);
     }
   });

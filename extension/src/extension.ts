@@ -99,7 +99,8 @@ function onSave(doc: vscode.TextDocument): void {
   const rel = vscode.workspace.asRelativePath(doc.uri, false);
   const repo = repoName();
   myFiles.add(`${repo}/${rel}`);
-  send({ type: "change", userId: userId(), repo, file: rel, diff });
+  // 저장된 파일의 인덱스를 새로 떠서 함께 보낸다 → 백엔드 분석 후보가 세션 중에도 최신.
+  send({ type: "change", userId: userId(), repo, file: rel, diff, index: extractIndex(rel, after) });
   log(`변경 전송: ${rel}`);
 }
 

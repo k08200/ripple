@@ -23,6 +23,7 @@ export interface ChangeMessage {
   repo: string;
   file: string;
   diff: string;
+  index?: FileIndex;
 }
 
 export type ClientMessage = RegisterMessage | ChangeMessage;
