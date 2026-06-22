@@ -5,7 +5,7 @@ import { lineDiff } from "./diff";
 import { FeedViewProvider } from "./feedView";
 import { PreviewPanel } from "./previewPanel";
 import { extractIndex } from "./indexer";
-import type { ChangeMessage, FileIndex, ImpactMessage, RegisterMessage } from "./protocol";
+import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, RegisterMessage } from "./protocol";
 
 const CODE_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,cs,kt,swift,rs,vue,svelte,sql,proto}";
 const IGNORE_GLOB = "**/{node_modules,.git,dist,build,out,.next,vendor}/**";
@@ -88,6 +88,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (isTracked(doc)) snapshots.set(doc.uri.fsPath, doc.getText());
     }),
     vscode.workspace.onDidSaveTextDocument(onSave),
+    createFileWatcher(),
     vscode.commands.registerCommand("ripple.reconnect", () => {
       log("수동 재연결");
       connect();
@@ -111,8 +112,42 @@ function log(msg: string): void {
   output.appendLine(`[${new Date().toLocaleTimeString()}] ${msg}`);
 }
 
-function send(obj: ChangeMessage | RegisterMessage): void {
+function send(obj: ChangeMessage | RegisterMessage | IndexMessage): void {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(obj));
+}
+
+/** 파일 생성/삭제 시 그 항목만 인덱스에 즉시 반영 (세션 중 신규 파일도 분석 후보로). */
+async function sendIndexOp(op: "upsert" | "remove", uri: vscode.Uri): Promise<void> {
+  if (uri.scheme !== "file") return;
+  const rel = vscode.workspace.asRelativePath(uri, false);
+  if (/(^|\/)(node_modules|\.git|dist|build|out|\.next|vendor)\//.test(rel)) return;
+  const repo = repoName();
+  if (op === "remove") {
+    myFiles.delete(`${repo}/${rel}`);
+    snapshots.delete(uri.fsPath);
+    send({ type: "index", repo, op: "remove", path: rel });
+    log(`파일 삭제 반영: ${rel}`);
+    return;
+  }
+  try {
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    const index = extractIndex(rel, Buffer.from(bytes).toString("utf8"));
+    myFiles.add(`${repo}/${rel}`);
+    send({ type: "index", repo, op: "upsert", path: rel, index });
+    log(`파일 생성 반영: ${rel}`);
+  } catch {
+    /* 읽기 실패 무시 */
+  }
+}
+
+/** 코드 파일 생성/삭제 감시 → 인덱스 즉시 갱신. (편집은 onSave 가 처리) */
+function createFileWatcher(): vscode.Disposable {
+  const w = vscode.workspace.createFileSystemWatcher(CODE_GLOB);
+  return vscode.Disposable.from(
+    w,
+    w.onDidCreate((uri) => void sendIndexOp("upsert", uri)),
+    w.onDidDelete((uri) => void sendIndexOp("remove", uri)),
+  );
 }
 
 function onSave(doc: vscode.TextDocument): void {

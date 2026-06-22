@@ -40,7 +40,17 @@ export interface ChangeMessage {
   index?: FileIndex;
 }
 
-export type ClientMessage = RegisterMessage | ChangeMessage;
+/** 파일 생성/삭제 시 인덱스 한 항목을 즉시 갱신/제거 (세션 중 신규 파일도 분석 후보로). */
+export interface IndexMessage {
+  type: "index";
+  repo: string;
+  op: "upsert" | "remove";
+  /** repo 기준 상대 경로. */
+  path: string;
+  index?: FileIndex;
+}
+
+export type ClientMessage = RegisterMessage | ChangeMessage | IndexMessage;
 
 /** AI가 짚은 "영향 갈 만한 곳" 한 건. */
 export interface AffectedHint {

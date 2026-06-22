@@ -3,7 +3,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { ClientMessage, ImpactMessage } from "./protocol.js";
 import type { KnownFile } from "./providers/provider.js";
 import { impactTouches } from "./match.js";
-import { upsertIndex } from "./index-store.js";
+import { upsertIndex, removeIndex } from "./index-store.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
@@ -47,7 +47,7 @@ function broadcast(msg: ImpactMessage): void {
 function parse(raw: string): ClientMessage | null {
   try {
     const obj = JSON.parse(raw) as ClientMessage;
-    if (obj && (obj.type === "register" || obj.type === "change")) return obj;
+    if (obj && (obj.type === "register" || obj.type === "change" || obj.type === "index")) return obj;
     return null;
   } catch {
     return null;
@@ -150,6 +150,25 @@ wss.on("connection", (ws) => {
         }
       }
       void handleChange(msg);
+    }
+
+    if (msg.type === "index") {
+      const c = clients.get(ws);
+      if (c) {
+        const full = `${msg.repo}/${msg.path}`;
+        if (msg.op === "remove") {
+          c.index = removeIndex(c.index, full);
+          c.files.delete(msg.path);
+        } else if (msg.index) {
+          c.files.add(msg.path);
+          c.index = upsertIndex(c.index, {
+            path: full,
+            exports: msg.index.exports ?? [],
+            imports: msg.index.imports ?? [],
+            refs: msg.index.refs ?? [],
+          });
+        }
+      }
     }
   });
 

@@ -9,3 +9,7 @@ export function upsertIndex(list: KnownFile[], kf: KnownFile): KnownFile[] {
   next.push(kf);
   return next;
 }
+
+export function removeIndex(list: KnownFile[], path: string): KnownFile[] {
+  return list.filter((k) => k.path !== path);
+}

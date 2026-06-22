@@ -26,7 +26,15 @@ export interface ChangeMessage {
   index?: FileIndex;
 }
 
-export type ClientMessage = RegisterMessage | ChangeMessage;
+export interface IndexMessage {
+  type: "index";
+  repo: string;
+  op: "upsert" | "remove";
+  path: string;
+  index?: FileIndex;
+}
+
+export type ClientMessage = RegisterMessage | ChangeMessage | IndexMessage;
 
 export interface AffectedHint {
   pathHint: string;
