@@ -9,6 +9,9 @@
     "backend": "npm run dev -w backend",
     "app": "npm run dev -w sample-app",
     "build": "npm run build -w backend && npm run build -w extension",
+    "brain": "node backend/dist/server.js",
+    "sim": "node scripts/sim.mjs",
+    "eval": "node scripts/eval.mjs",
     "package": "npm run build -w extension && cd extension && npx --yes @vscode/vsce package --no-dependencies -o ripple.vsix"
   },
   "devDependencies": {

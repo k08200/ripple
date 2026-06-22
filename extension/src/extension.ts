@@ -4,7 +4,8 @@ import { WebSocket } from "ws";
 import { lineDiff } from "./diff";
 import { FeedViewProvider } from "./feedView";
 import { PreviewPanel } from "./previewPanel";
-import type { ChangeMessage, ImpactMessage, RegisterMessage } from "./protocol";
+import { extractIndex } from "./indexer";
+import type { ChangeMessage, FileIndex, ImpactMessage, RegisterMessage } from "./protocol";
 
 const CODE_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,cs,kt,swift,rs,vue,svelte,sql,proto}";
 const IGNORE_GLOB = "**/{node_modules,.git,dist,build,out,.next,vendor}/**";
@@ -102,13 +103,24 @@ function onSave(doc: vscode.TextDocument): void {
   log(`변경 전송: ${rel}`);
 }
 
-async function gatherFiles(): Promise<string[]> {
+async function gatherWorkspace(): Promise<{ files: string[]; index: FileIndex[] }> {
   const uris = await vscode.workspace.findFiles(CODE_GLOB, IGNORE_GLOB, MAX_FILES);
   const repo = repoName();
   myFiles.clear();
-  const rels = uris.map((u) => vscode.workspace.asRelativePath(u, false));
-  for (const r of rels) myFiles.add(`${repo}/${r}`);
-  return rels;
+  const files: string[] = [];
+  const index: FileIndex[] = [];
+  for (const u of uris) {
+    const rel = vscode.workspace.asRelativePath(u, false);
+    files.push(rel);
+    myFiles.add(`${repo}/${rel}`);
+    try {
+      const bytes = await vscode.workspace.fs.readFile(u);
+      index.push(extractIndex(rel, Buffer.from(bytes).toString("utf8")));
+    } catch {
+      /* 읽기 실패한 파일은 인덱스 생략 (경로는 유지). */
+    }
+  }
+  return { files, index };
 }
 
 function connect(): void {
@@ -123,10 +135,10 @@ function connect(): void {
 
   ws.on("open", async () => {
     reconnectDelay = 1000;
-    const files = await gatherFiles();
-    const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files };
+    const { files, index } = await gatherWorkspace();
+    const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index };
     send(reg);
-    log(`연결됨 · ${files.length}개 파일 등록`);
+    log(`연결됨 · ${files.length}개 파일 등록 (${index.length} 인덱스)`);
   });
 
   ws.on("message", (data) => {

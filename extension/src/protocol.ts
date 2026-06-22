@@ -2,11 +2,19 @@
 
 export type Severity = "info" | "low" | "high";
 
+export interface FileIndex {
+  path: string;
+  exports: string[];
+  imports: string[];
+  refs: string[];
+}
+
 export interface RegisterMessage {
   type: "register";
   userId: string;
   repo: string;
   files: string[];
+  index?: FileIndex[];
 }
 
 export interface ChangeMessage {

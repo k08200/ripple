@@ -1,0 +1,85 @@
+[
+  {
+    "name": "export 시그니처 변경 → caller 영향 (high)",
+    "repo": "payment-api",
+    "file": "src/payment.ts",
+    "diff": "@@\n-export function charge(amount: number): Promise<void>\n+export function charge(amount: number, currency: string): Promise<Receipt>",
+    "expectedAffected": ["web/src/payment-client.ts"],
+    "expectedSeverity": "high",
+    "index": [
+      { "path": "payment-api/src/payment.ts", "exports": ["charge", "refund"], "imports": [], "refs": [] },
+      { "path": "payment-api/src/db.ts", "exports": ["query"], "imports": ["./client"], "refs": ["query"] },
+      { "path": "web/src/payment-client.ts", "exports": ["pay"], "imports": ["payment-api/payment"], "refs": ["charge"] },
+      { "path": "web/src/cart.ts", "exports": ["addToCart"], "imports": ["./payment-client"], "refs": ["pay"] },
+      { "path": "ml/train.py", "exports": [], "imports": ["pandas"], "refs": [] }
+    ]
+  },
+  {
+    "name": "DB 스키마 컬럼 추가 → 리포지토리 영향 (low·additive)",
+    "repo": "core",
+    "file": "prisma/schema.prisma",
+    "diff": "@@\n model User {\n   id    String @id\n+  phone String?\n }",
+    "expectedAffected": ["core/src/repositories/user-repo.ts"],
+    "expectedSeverity": "low",
+    "index": [
+      { "path": "core/prisma/schema.prisma", "exports": [], "imports": [], "refs": [] },
+      { "path": "core/src/repositories/user-repo.ts", "exports": ["UserRepo"], "imports": ["@prisma/client"], "refs": ["User", "prisma", "findUser"] },
+      { "path": "web/src/profile.ts", "exports": ["Profile"], "imports": ["./api"], "refs": ["fetchProfile"] },
+      { "path": "docs/readme.md", "exports": [], "imports": [], "refs": [] }
+    ]
+  },
+  {
+    "name": "내부 구현만 변경, export 그대로 → 영향 없음 (info)",
+    "repo": "web",
+    "file": "src/utils/format.ts",
+    "diff": "@@\n export function money(n: number) {\n-  return '$' + n.toFixed(2)\n+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2 })\n }",
+    "expectedAffected": [],
+    "expectedSeverity": "info",
+    "index": [
+      { "path": "web/src/utils/format.ts", "exports": ["money"], "imports": [], "refs": [] },
+      { "path": "web/src/cart.ts", "exports": ["addToCart"], "imports": ["./utils/format"], "refs": ["money"] },
+      { "path": "api/src/orders.ts", "exports": ["createOrder"], "imports": [], "refs": [] }
+    ]
+  },
+  {
+    "name": "REST 라우트 경로 변경 → 클라이언트 영향 (high)",
+    "repo": "api",
+    "file": "src/routes/auth.ts",
+    "diff": "@@\n-router.post('/login', loginHandler)\n+router.post('/v2/login', loginHandler)",
+    "expectedAffected": ["web/src/api/auth-client.ts", "mobile/src/login.ts"],
+    "expectedSeverity": "high",
+    "index": [
+      { "path": "api/src/routes/auth.ts", "exports": ["authRouter"], "imports": ["express"], "refs": ["/login", "loginHandler"] },
+      { "path": "web/src/api/auth-client.ts", "exports": ["login"], "imports": ["axios"], "refs": ["/login"] },
+      { "path": "mobile/src/login.ts", "exports": ["doLogin"], "imports": [], "refs": ["/login"] },
+      { "path": "api/src/db.ts", "exports": ["query"], "imports": [], "refs": [] }
+    ]
+  },
+  {
+    "name": "주석만 변경 → 영향 없음 (info)",
+    "repo": "web",
+    "file": "src/cart.ts",
+    "diff": "@@\n+// TODO: 할인 로직 리팩터 예정\n function addToCart(id: string) {",
+    "expectedAffected": [],
+    "expectedSeverity": "info",
+    "index": [
+      { "path": "web/src/cart.ts", "exports": ["addToCart"], "imports": ["./utils/format"], "refs": ["money"] },
+      { "path": "web/src/checkout.ts", "exports": ["checkout"], "imports": ["./cart"], "refs": ["addToCart"] },
+      { "path": "api/src/orders.ts", "exports": ["createOrder"], "imports": [], "refs": [] }
+    ]
+  },
+  {
+    "name": "공유 타입 필드 제거 → 사용처 깨짐 (high)",
+    "repo": "shared",
+    "file": "src/types/order.ts",
+    "diff": "@@\n export interface Order {\n   id: string\n-  legacyCode: string\n   total: number\n }",
+    "expectedAffected": ["api/src/orders.ts", "web/src/checkout.ts"],
+    "expectedSeverity": "high",
+    "index": [
+      { "path": "shared/src/types/order.ts", "exports": ["Order"], "imports": [], "refs": [] },
+      { "path": "api/src/orders.ts", "exports": ["createOrder"], "imports": ["../../shared/src/types/order"], "refs": ["Order", "legacyCode"] },
+      { "path": "web/src/checkout.ts", "exports": ["checkout"], "imports": ["shared/types/order"], "refs": ["Order"] },
+      { "path": "ml/features.py", "exports": [], "imports": ["pandas"], "refs": [] }
+    ]
+  }
+]

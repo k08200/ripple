@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import type { ClientMessage, ImpactMessage } from "./protocol.js";
+import type { KnownFile } from "./providers/provider.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
@@ -10,6 +11,7 @@ interface Client {
   userId: string;
   repo: string;
   files: Set<string>;
+  index: KnownFile[];
 }
 
 const clients = new Map<WebSocket, Client>();
@@ -20,6 +22,13 @@ function knownFiles(): string[] {
   const all = new Set<string>();
   for (const c of clients.values()) for (const f of c.files) all.add(`${c.repo}/${f}`);
   return [...all];
+}
+
+/** 모든 클라이언트 인덱스의 합집합 (path 는 `${repo}/${rel}` 로 정규화). */
+function knownIndex(): KnownFile[] {
+  const byPath = new Map<string, KnownFile>();
+  for (const c of clients.values()) for (const kf of c.index) byPath.set(kf.path, kf);
+  return [...byPath.values()];
 }
 
 function broadcast(msg: ImpactMessage): void {
@@ -47,6 +56,7 @@ async function handleChange(
     file: msg.file,
     diff: msg.diff,
     knownFiles: knownFiles(),
+    knownIndex: knownIndex(),
   });
 
   const impact: ImpactMessage = {
@@ -81,19 +91,28 @@ const http = createServer((req, res) => {
 const wss = new WebSocketServer({ server: http });
 
 wss.on("connection", (ws) => {
-  clients.set(ws, { userId: "unknown", repo: "unknown", files: new Set() });
+  clients.set(ws, { userId: "unknown", repo: "unknown", files: new Set(), index: [] });
 
   ws.on("message", (data) => {
     const msg = parse(data.toString());
     if (!msg) return;
 
     if (msg.type === "register") {
+      const index: KnownFile[] = (msg.index ?? []).map((fi) => ({
+        path: `${msg.repo}/${fi.path}`,
+        exports: fi.exports ?? [],
+        imports: fi.imports ?? [],
+        refs: fi.refs ?? [],
+      }));
       clients.set(ws, {
         userId: msg.userId,
         repo: msg.repo,
         files: new Set(msg.files),
+        index,
       });
-      console.log(`[register] ${msg.userId} @ ${msg.repo} (${msg.files.length} files)`);
+      console.log(
+        `[register] ${msg.userId} @ ${msg.repo} (${msg.files.length} files, ${index.length} indexed)`,
+      );
       return;
     }
 

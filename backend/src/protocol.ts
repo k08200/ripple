@@ -3,6 +3,19 @@
 
 export type Severity = "info" | "low" | "high";
 
+/** 파일의 가벼운 심볼 인덱스 — 익스텐션이 만들어 register 에 실어 보낸다.
+ *  이게 있으면 백엔드가 "파일명 추측" 이 아니라 실제 import/참조 엣지로 영향을 판단한다. */
+export interface FileIndex {
+  /** repo 기준 상대 경로. */
+  path: string;
+  /** 이 파일이 export 하는 심볼 이름들. */
+  exports: string[];
+  /** 이 파일이 import 하는 모듈 specifier (예: "./payment", "../shared/types/order"). */
+  imports: string[];
+  /** 이 파일이 참조하는 심볼/문자열(라우트 경로 등). 영향 역방향 매칭에 사용. */
+  refs: string[];
+}
+
 /** 클라이언트가 접속하며 자신과 워크스페이스 파일 목록을 알린다. */
 export interface RegisterMessage {
   type: "register";
@@ -10,6 +23,8 @@ export interface RegisterMessage {
   repo: string;
   /** repo 기준 상대 경로. 서버가 "누가 무슨 파일을 들고 있는지" 라우팅에 쓴다. */
   files: string[];
+  /** 파일별 심볼 인덱스(옵션). 없으면 경로만으로 폴백. */
+  index?: FileIndex[];
 }
 
 /** 파일 저장이 일어났을 때 보내는 변경 이벤트. */
