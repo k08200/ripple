@@ -117,9 +117,13 @@ Alice(payment-api) 가 payment.ts 의 export 시그니처 변경 저장
 | 단계 | 내용 | 상태 |
 |:--:|---|:--:|
 | 0 | Monaco + Yjs 라이브 협업 데모 ("라이브 진짜 됨") | ✅ `demo/` |
-| **1** | **저장 → diff → AI 영향 분석 → 영향자 알림** | ✅ **지금 여기 (MVP 동작)** |
-| 2 | 실제 팀 dogfooding · 영향 라우팅 정밀화 (import 그래프) | ⬜ |
-| 3 | 어댑터 확장(JetBrains/Zed) · 전사 repo | ⬜ |
+| 1 | 저장 → diff → 영향 분석 → 영향자 알림 (MVP 동작) | ✅ |
+| **2** | **결정론적 의존 그래프 엔진 + 측정 하네스** | ✅ **여기 (실측: R100/P~78, LLM보다 정확)** |
+| 3 | 실제 팀 dogfooding (이제 임계 검증됐으니) | ⬜ |
+| 4 | 어댑터 확장(JetBrains/Zed) · 전사 repo | ⬜ |
+
+> **핵심 발견**: "AI가 코드를 읽어 영향을 알려준다"의 엔진은 LLM이 아니라 **결정론적 의존 그래프**였다.
+> 실측(`scripts/eval.mjs`, autobe 실제 커밋)에서 graph R100/P~78 > LLM 4구성 전부. 자세한 건 [`scripts/README.md`](scripts/README.md).
 
 ---
 
