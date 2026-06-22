@@ -33,6 +33,7 @@
     },
     "commands": [
       { "command": "ripple.reconnect", "title": "Ripple: 백엔드 재연결" },
+      { "command": "ripple.showFeed", "title": "Ripple: 변경 피드 열기" },
       { "command": "ripple.openPreview", "title": "Ripple: Live Preview 열기", "icon": "$(preview)" }
     ],
     "menus": {

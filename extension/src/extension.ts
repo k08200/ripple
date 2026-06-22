@@ -17,6 +17,23 @@ let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectDelay = 1000;
 let output: vscode.OutputChannel;
 let feed: FeedViewProvider;
+let status: vscode.StatusBarItem;
+let connected = false;
+let impactCount = 0;
+
+/** 하단 상태바: 연결 상태 + 나에게 온 영향 건수를 한눈에. */
+function updateStatus(): void {
+  if (!status) return;
+  if (connected) {
+    status.text = `$(pulse) Ripple${impactCount > 0 ? ` · 영향 ${impactCount}` : ""}`;
+    status.tooltip = "Ripple 연결됨 — 클릭하면 변경 피드";
+    status.backgroundColor = impactCount > 0 ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
+  } else {
+    status.text = "$(circle-slash) Ripple 끊김";
+    status.tooltip = "Ripple 백엔드 연결 끊김 — 클릭하면 재연결";
+    status.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+  }
+}
 
 /** 저장 이전 내용 스냅샷 (fsPath -> text). diff 계산의 기준선. */
 const snapshots = new Map<string, string>();
@@ -49,6 +66,10 @@ function isTracked(doc: vscode.TextDocument): boolean {
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel("Ripple");
   feed = new FeedViewProvider();
+  status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  status.command = "ripple.showFeed";
+  updateStatus();
+  status.show();
 
   for (const doc of vscode.workspace.textDocuments) {
     if (isTracked(doc)) snapshots.set(doc.uri.fsPath, doc.getText());
@@ -56,7 +77,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     output,
+    status,
     vscode.window.registerWebviewViewProvider(FeedViewProvider.viewId, feed),
+    vscode.commands.registerCommand("ripple.showFeed", () => {
+      impactCount = 0;
+      updateStatus();
+      void vscode.commands.executeCommand("ripple.feed.focus");
+    }),
     vscode.workspace.onDidOpenTextDocument((doc) => {
       if (isTracked(doc)) snapshots.set(doc.uri.fsPath, doc.getText());
     }),
@@ -136,6 +163,8 @@ function connect(): void {
 
   ws.on("open", async () => {
     reconnectDelay = 1000;
+    connected = true;
+    updateStatus();
     const { files, index } = await gatherWorkspace();
     const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index };
     send(reg);
@@ -156,6 +185,8 @@ function connect(): void {
 }
 
 function scheduleReconnect(): void {
+  connected = false;
+  updateStatus();
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(connect, reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
@@ -184,6 +215,11 @@ function handleImpact(msg: ImpactMessage): void {
   const hitsMe = Boolean(matched);
   feed.push(msg, { mine, hitsMe });
   PreviewPanel.current?.push(msg, { mine, hitsMe });
+
+  if (hitsMe && !mine) {
+    impactCount += 1;
+    updateStatus();
+  }
 
   // 접속 시 백필된 과거 변경은 피드에만 채우고 팝업은 띄우지 않는다 (노이즈 방지).
   if (msg.replay) return;

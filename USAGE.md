@@ -52,6 +52,9 @@ code extension/        # extension 폴더를 VS Code 로 열고
 새 창에서 아무 코드 repo 나 열면, Ripple 이 자동 활성화되어 백엔드에 붙는다.
 좌측 액티비티바의 🌊 Ripple → "변경 피드" 가 보인다.
 
+**연결 상태는 하단 상태바에서 한눈에**: `$(pulse) Ripple` = 연결됨, `Ripple 끊김`(빨강) = 두뇌 꺼짐/네트워크.
+나에게 온 영향이 쌓이면 `Ripple · 영향 N` 으로 노랗게 뜨고, 클릭하면 변경 피드가 열린다.
+
 ### 2b. 설치해서 상시 쓰기 (.vsix)
 
 ```bash
