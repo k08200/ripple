@@ -78,6 +78,19 @@ autobe(2339 커밋) 14건 실측 결과:
 \* mock 은 실제 코드에서 거의 아무것도 못 찾음(예측 자체가 없어 precision 이 허수). graph 가 게이트(70/50)를 실측으로 넘김.
 † severity 79% 는 graph 약점이 아니라 **diff-휴리스틱 라벨의 한계** — 불일치를 까보면 export-only 라벨이 필드/중첩 인터페이스 제거를 놓쳐 graph 가 오히려 맞는 쪽. 진짜 severity 게이트는 LLM/사람 라벨이 필요.
 
+### 일반화 — 3개 독립 repo (autobe 만의 일이 아님)
+
+같은 하네스(`GEN_WINDOW=6`, 40케이스, graph 단독)를 도메인이 다른 3개 repo 에 돌림:
+
+| repo | 도메인 | graph P | R | F1 | Sev | mock |
+|---|---|:--:|:--:|:--:|:--:|---|
+| autobe | AI codegen 백엔드 | 78% | 100% | 88% | 73% | R6% |
+| grida | 디자인툴 (10k커밋) | **97%** | 100% | 98% | 90% | R17% |
+| wrtn-auroraworld-fe | 프론트엔드 | 92% | 100% | 96% | 83% | R61% |
+
+**Recall 3개 전부 100%** — graph 는 진짜 import 의존 파일을 절대 안 놓친다. Precision 78~97%(autobe 가
+비관적 outlier, 평균 ~89%). mock(파일명 추측)은 셋 다 사망. **결론이 한 repo 우연이 아님이 확인됨.**
+
 **해결된 것**:
 - Recall 88→100% — 원인은 barrel 이 아니라 `MAX_AFFECTED=8` 캡이 고-팬아웃 변경을 잘라낸 것. 캡 50 으로 올리고 확신도순 정렬([graph.ts](../backend/src/providers/graph.ts)).
 
