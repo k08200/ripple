@@ -99,9 +99,23 @@ async function main() {
   console.log(`  carol 은 영향 없음:           ${!carolHit ? "✅ YES (기대대로)" : "⚠️  오탐 발생"}`);
   console.log(`  db.ts 오탐 사라짐(graph):     ${!dbFalsePos ? "✅ YES (graph 가 import 엣지로 거름)" : "⚠️  여전히 오탐"}`);
 
+  // 오프라인 catch-up: 변경이 끝난 *뒤에* 접속하는 dave — 놓친 영향을 백필받아야 한다.
+  console.log("\n▶ dave 가 (변경 끝난 뒤) 뒤늦게 접속 — web repo, payment-client.ts 보유");
+  const dave = makeClient("dave", "web", [
+    { path: "src/payment-client.ts", exports: ["pay"], imports: ["payment-api/payment"], refs: ["charge"] },
+  ]);
+  await dave.ready();
+  await sleep(800); // 백필 수신 대기
+
+  const daveBackfill = dave.inbox.filter((m) => m.replay);
+  const daveHit = daveBackfill.some((m) => hitsMe(m, dave.files));
+  console.log(`  dave 백필 수신: ${dave.inbox.length}건 (replay=${daveBackfill.length})`);
+  console.log(`  dave 가 놓친 영향 받음:        ${daveHit ? "✅ YES (접속 전 변경이 피드에 채워짐)" : "❌ NO"}`);
+
   alice.close();
   bob.close();
   carol.close();
+  dave.close();
   await sleep(100);
   process.exit(0);
 }

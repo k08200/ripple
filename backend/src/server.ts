@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import type { ClientMessage, ImpactMessage } from "./protocol.js";
 import type { KnownFile } from "./providers/provider.js";
+import { impactTouches } from "./match.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
@@ -16,6 +17,10 @@ interface Client {
 
 const clients = new Map<WebSocket, Client>();
 let impactSeq = 0;
+
+/** 최근 영향 분석 결과 링버퍼 — 늦게 접속한 사람에게 "놓친 변경" 을 백필한다. */
+const HISTORY_MAX = 50;
+const history: ImpactMessage[] = [];
 
 /** 모든 클라이언트가 들고 있는 파일의 합집합 = 영향 분석 후보군. */
 function knownFiles(): string[] {
@@ -71,6 +76,9 @@ async function handleChange(
     ts: Date.now(),
   };
 
+  history.push(impact);
+  if (history.length > HISTORY_MAX) history.shift();
+
   console.log(
     `[change] ${msg.userId} ${msg.repo}/${msg.file} ` +
       `→ ${impact.severity} · 영향 ${impact.affected.length}건 (${usedProvider})`,
@@ -113,6 +121,16 @@ wss.on("connection", (ws) => {
       console.log(
         `[register] ${msg.userId} @ ${msg.repo} (${msg.files.length} files, ${index.length} indexed)`,
       );
+
+      // 놓친 변경 백필: 이 사람 파일을 가리키는 최근 영향만, 본인 변경 제외하고 replay.
+      const fullFiles = new Set(msg.files.map((f) => `${msg.repo}/${f}`));
+      const missed = history.filter(
+        (h) => h.author !== msg.userId && impactTouches(h, fullFiles),
+      );
+      for (const h of missed) {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ ...h, replay: true }));
+      }
+      if (missed.length > 0) console.log(`  ↳ ${msg.userId} 에게 놓친 영향 ${missed.length}건 백필`);
       return;
     }
 

@@ -61,6 +61,8 @@ export interface ImpactMessage {
   affected: AffectedHint[];
   /** epoch millis. */
   ts: number;
+  /** 접속 시 백필된 과거 변경이면 true — 클라는 알림 팝업 없이 피드에만 채운다. */
+  replay?: boolean;
 }
 
 export type ServerMessage = ImpactMessage;

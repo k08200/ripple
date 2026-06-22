@@ -184,6 +184,8 @@ function handleImpact(msg: ImpactMessage): void {
   feed.push(msg, { mine, hitsMe });
   PreviewPanel.current?.push(msg, { mine, hitsMe });
 
+  // 접속 시 백필된 과거 변경은 피드에만 채우고 팝업은 띄우지 않는다 (노이즈 방지).
+  if (msg.replay) return;
   if (!hitsMe) return;
   const reason = msg.affected.find((a) => matchMine(a.pathHint) === matched)?.reason ?? "";
   const text = `🌊 ${msg.author} · ${msg.repo}/${msg.file} → 너의 ${matched} 영향: ${reason}`;

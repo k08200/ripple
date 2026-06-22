@@ -42,6 +42,7 @@ export interface ImpactMessage {
   severity: Severity;
   affected: AffectedHint[];
   ts: number;
+  replay?: boolean;
 }
 
 export type ServerMessage = ImpactMessage;
