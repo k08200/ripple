@@ -1,14 +1,22 @@
 {
-  "name": "ripple-backend",
-  "private": true,
+  "name": "ripple-brain",
   "version": "0.1.0",
   "type": "module",
-  "description": "Ripple 두뇌 — 변경 수집 + AI 영향 분석 + 영향받는 사람에게 라우팅",
+  "description": "Ripple 두뇌 — 저장 시점 코드 변경 영향을 영향받는 팀원에게 라우팅하는 WebSocket 서버 (결정론적 의존 그래프 엔진)",
+  "keywords": ["ripple", "impact analysis", "websocket", "dependency graph", "team", "change notification"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/k08200/ripple.git", "directory": "backend" },
+  "homepage": "https://github.com/k08200/ripple#readme",
+  "bugs": { "url": "https://github.com/k08200/ripple/issues" },
+  "bin": { "ripple-brain": "bin/ripple-brain.mjs" },
+  "files": ["dist", "bin"],
+  "engines": { "node": ">=20" },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "test": "node --test test/*.mjs"
+    "test": "node --test test/*.mjs",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "ws": "^8.18.0"

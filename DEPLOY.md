@@ -25,7 +25,23 @@ curl http://<host>:7077/health   # {"ok":true,"provider":"graph",...}
 - `-v ripple-data:/app`: 히스토리 영속(`.ripple-history.json`) → 재시작해도 백필 유지.
 - LLM 모드: `-e RIPPLE_PROVIDER=hybrid -e OPENROUTER_API_KEY=...` (기본 graph는 코드 외부 전송 0).
 
-### Docker 없이
+### npm 으로 (제일 간단 — 설치 없이 실행)
+
+두뇌는 npm 패키지(`ripple-brain`)로도 배포된다. 게시 후 누구나:
+
+```bash
+RIPPLE_SECRET=토큰 PORT=7077 npx ripple-brain      # 설치 없이 바로 실행
+# 또는: npm i -g ripple-brain && ripple-brain
+```
+
+게시(메인테이너):
+```bash
+cd backend && npm publish        # 이름 충돌 시 @your-scope/ripple-brain 로 스코프
+```
+
+> ⚠️ **익스텐션은 npm 으로 배포 못 한다** — VS Code 확장은 Marketplace/Open VSX/.vsix 만. (아래 ②)
+
+### Docker 없이 (소스에서)
 
 ```bash
 npm install && npm run build
