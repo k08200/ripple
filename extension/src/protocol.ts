@@ -18,6 +18,13 @@ export interface RegisterMessage {
   team?: string;
 }
 
+export interface PrRef {
+  number: number;
+  url: string;
+  title: string;
+  head: string;
+}
+
 export interface ChangeMessage {
   type: "change";
   userId: string;
@@ -25,6 +32,8 @@ export interface ChangeMessage {
   file: string;
   diff: string;
   index?: FileIndex;
+  source?: "save" | "pr";
+  pr?: PrRef;
 }
 
 export interface IndexMessage {
@@ -60,6 +69,8 @@ export interface ImpactMessage {
   affected: AffectedHint[];
   changedSymbols: string[];
   changeDetails: ChangeDetail[];
+  source?: "save" | "pr";
+  pr?: PrRef;
   ts: number;
   replay?: boolean;
 }

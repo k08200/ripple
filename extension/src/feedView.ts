@@ -48,10 +48,15 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
     this.view = view;
     view.webview.options = { enableScripts: true };
     view.webview.html = this.html();
-    view.webview.onDidReceiveMessage((m: { type?: string; path?: string; line?: number }) => {
+    view.webview.onDidReceiveMessage((m: { type?: string; path?: string; line?: number; url?: string }) => {
       // 웹뷰 스크립트가 준비됐다고 알리면 그제서야 history 를 보낸다(race 방지).
       if (m?.type === "ready") {
         for (const item of this.history) view.webview.postMessage(item);
+        return;
+      }
+      // PR 뱃지 클릭 → 브라우저로 PR 열기.
+      if (m?.type === "openUrl" && m.url) {
+        void vscode.env.openExternal(vscode.Uri.parse(m.url));
         return;
       }
       // 피드 항목 클릭 → 그 파일(있으면 그 줄로) 열기.
@@ -97,6 +102,8 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
   .delta .after { color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); }
   .badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   .you { background: var(--vscode-focusBorder); color: #fff; }
+  .pr { background: #8957e5; color: #fff; cursor: pointer; }
+  .pr:hover { filter: brightness(1.15); }
 </style></head>
 <body>
   <div id="empty" class="empty">아직 변경 없음. 팀원이 파일을 저장하면 여기에 떠요.</div>
@@ -107,6 +114,8 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
     const empty = document.getElementById('empty');
     const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
     list.addEventListener('click', (e) => {
+      const pr = e.target.closest('.pr');
+      if (pr && pr.dataset.url) { vscode.postMessage({ type: 'openUrl', url: pr.dataset.url }); return; }
       const site = e.target.closest('.site');
       if (site && site.dataset.path) { vscode.postMessage({ type: 'open', path: site.dataset.path, line: Number(site.dataset.line) }); return; }
       const el = e.target.closest('.aff');
@@ -128,9 +137,11 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
       }).join('');
       // 내게 영향이면, 내 코드의 실제 사용 위치(file:line + 코드)를 클릭 가능하게 보여준다.
       const sites = (m.sites || []).map(s => '<div class="site" title="이 줄로 점프" data-path="' + esc(s.rel) + '" data-line="' + s.line + '"><span class="loc">' + esc(s.rel.split('/').pop()) + ':' + s.line + '</span>  <code>' + esc(s.text) + '</code></div>').join('');
+      const prBadge = (m.source === 'pr' && m.pr) ? '<span class="badge pr" data-url="' + esc(m.pr.url) + '" title="' + esc(m.pr.title) + ' — 클릭하면 PR 열기">PR #' + m.pr.number + '</span>' : '';
       div.innerHTML =
         '<div class="head">' +
           '<span class="author">' + esc(m.author) + (m.mine ? ' <span class="badge you">나</span>' : '') + '</span>' +
+          prBadge +
           (m.hitsMe ? '<span class="badge">너에게 영향</span>' : '') +
           '<span style="flex:1"></span><span class="path">' + when + '</span>' +
         '</div>' +

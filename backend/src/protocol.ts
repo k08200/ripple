@@ -29,7 +29,16 @@ export interface RegisterMessage {
   team?: string;
 }
 
-/** 파일 저장이 일어났을 때 보내는 변경 이벤트. */
+/** PR 출처 정보 — 변경이 저장(save)이 아니라 PR 에서 온 경우. */
+export interface PrRef {
+  number: number;
+  url: string;
+  title: string;
+  /** PR head 커밋 sha — 중복 분석 방지(같은 PR 같은 head 는 한 번만). */
+  head: string;
+}
+
+/** 파일 저장(또는 PR) 시 보내는 변경 이벤트. */
 export interface ChangeMessage {
   type: "change";
   userId: string;
@@ -40,6 +49,9 @@ export interface ChangeMessage {
   diff: string;
   /** 저장 직후 이 파일의 갱신된 심볼 인덱스(옵션) — 세션 중 인덱스를 최신으로 유지. */
   index?: FileIndex;
+  /** 출처. 기본 save. PR 이면 pr 메타 동반. */
+  source?: "save" | "pr";
+  pr?: PrRef;
 }
 
 /** 파일 생성/삭제 시 인덱스 한 항목을 즉시 갱신/제거 (세션 중 신규 파일도 분석 후보로). */
@@ -85,6 +97,9 @@ export interface ImpactMessage {
   changedSymbols: string[];
   /** 바뀐 export 의 before→after 선언 (시그니처 변경의 '어떻게'). */
   changeDetails: ChangeDetail[];
+  /** 출처(save/pr). PR 이면 pr 메타로 피드에서 PR 뱃지·링크 표시. */
+  source?: "save" | "pr";
+  pr?: PrRef;
   /** epoch millis. */
   ts: number;
   /** 접속 시 백필된 과거 변경이면 true — 클라는 알림 팝업 없이 피드에만 채운다. */

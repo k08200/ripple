@@ -113,6 +113,10 @@ function parse(raw: string): ClientMessage | null {
   return null;
 }
 
+/** 같은 PR(같은 head)·같은 파일은 한 번만 분석 — 여러 클라가 폴링해 보내도 피드 중복 방지. */
+const prSeen = new Set<string>();
+const PR_SEEN_MAX = 2000;
+
 async function handleChange(
   msg: Extract<ClientMessage, { type: "change" }>,
   team: string,
@@ -121,6 +125,12 @@ async function handleChange(
   if (SECRET_FILE.test(msg.file)) {
     console.log(`[skip] 비밀 파일 분석 제외: ${msg.repo}/${msg.file}`);
     return;
+  }
+  if (msg.source === "pr" && msg.pr) {
+    const key = `${team}#${msg.pr.url}#${msg.pr.head}#${msg.file}`;
+    if (prSeen.has(key)) return; // 이미 분석한 PR 변경
+    prSeen.add(key);
+    if (prSeen.size > PR_SEEN_MAX) prSeen.delete(prSeen.values().next().value as string);
   }
   const { result, usedProvider } = await analyze(provider, {
     repo: msg.repo,
@@ -141,6 +151,8 @@ async function handleChange(
     affected: result.affected,
     changedSymbols: result.changedSymbols,
     changeDetails: result.changeDetails,
+    source: msg.source ?? "save",
+    pr: msg.pr,
     ts: Date.now(),
   };
 

@@ -11,10 +11,13 @@ import { FeedViewProvider, openByHint } from "./feedView";
 import type { UseSite } from "./feedView";
 import { extractIndex } from "./indexer";
 import { locateUseSites } from "./usesite";
+import { fetchOpenPrChanges } from "./pr-watch";
 import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, PresenceMessage, RegisterMessage, ServerMessage } from "./protocol";
 
 const CODE_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,cs,kt,swift,rs,vue,svelte,sql,proto}";
+const CODE_RE = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|java|rb|php|cs|kt|swift|rs|vue|svelte|sql|proto)$/;
 const IGNORE_GLOB = "**/{node_modules,.git,dist,build,out,.next,vendor}/**";
+const PR_POLL_MS = 3 * 60_000; // 열린 PR 폴링 주기
 const MAX_FILES = 3000;
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 10_000;
@@ -102,20 +105,54 @@ function repoName(): string {
   return vscode.workspace.workspaceFolders?.[0]?.name ?? "workspace";
 }
 
+/** workspace 의 git 원격 origin URL (없으면 빈 문자열). */
+function gitRemoteUrl(): string {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!root) return "";
+  try {
+    return execFileSync("git", ["config", "--get", "remote.origin.url"], { cwd: root, encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
 /** 팀 room — 같은 git 원격(=같은 프로젝트)이면 자동으로 같은 room. 설정 > git remote > repo 이름. */
 function teamId(): string {
   const cfg = vscode.workspace.getConfiguration("ripple").get<string>("team");
   if (cfg && cfg.trim()) return cfg.trim();
-  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (root) {
-    try {
-      const url = execFileSync("git", ["config", "--get", "remote.origin.url"], { cwd: root, encoding: "utf8" }).trim();
-      if (url) return normalizeTeam(url);
-    } catch {
-      /* git 없음/원격 없음 → 폴백 */
+  const url = gitRemoteUrl();
+  return url ? normalizeTeam(url) : repoName();
+}
+
+/** 이미 두뇌로 보낸 PR 변경 (pr#head#file) — 폴링 중복 방지. */
+const prSent = new Set<string>();
+
+/** 열린 PR 들을 가져와 두뇌로 보낸다 → 같은 엔진이 분석 → 피드에 PR 영향이 뜬다. */
+async function pollPrs(interactive = false): Promise<void> {
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  const cfg = vscode.workspace.getConfiguration("ripple");
+  if (!cfg.get<boolean>("watchPRs", true) && !interactive) return;
+  const remote = gitRemoteUrl();
+  if (!remote) return;
+  try {
+    const changes = await fetchOpenPrChanges(remote, (f) => CODE_RE.test(f), interactive);
+    let sent = 0;
+    for (const c of changes) {
+      const key = `${c.pr.number}#${c.pr.head}#${c.file}`;
+      if (prSent.has(key)) continue;
+      prSent.add(key);
+      send({ type: "change", userId: c.author, repo: repoName(), file: c.file, diff: c.diff, source: "pr", pr: c.pr });
+      sent += 1;
     }
+    if (interactive) {
+      void vscode.window.showInformationMessage(
+        changes.length === 0 ? "🌊 Ripple: 열린 PR 이 없거나 GitHub 로그인이 필요합니다." : `🌊 Ripple: 열린 PR ${changes.length}건 분석 → 피드 확인.`,
+      );
+    }
+    if (sent > 0) log(`PR 변경 ${sent}건 분석 요청`);
+  } catch (e) {
+    log(`PR 폴링 오류: ${e instanceof Error ? e.message : String(e)}`);
   }
-  return repoName();
 }
 
 function backendUrl(): string {
@@ -266,6 +303,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       connect();
     }),
     vscode.commands.registerCommand("ripple.demo", runDemo),
+    vscode.commands.registerCommand("ripple.refreshPrs", () => void pollPrs(true)),
     vscode.commands.registerCommand("ripple.reindex", async () => {
       indexed = false;
       indexMap.clear();
@@ -276,6 +314,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log("수동 재인덱싱");
     }),
   );
+
+  const prTimer = setInterval(() => void pollPrs(), PR_POLL_MS);
+  context.subscriptions.push({ dispose: () => clearInterval(prTimer) });
 
   connect(); // 내부에서 주소 해결(명시>발견>로컬자동) 후 연결
   log(`Ripple 활성화 · user=${userId()} · repo=${repoName()}`);
@@ -369,6 +410,8 @@ async function connect(): Promise<void> {
       const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index, team: teamId() };
       send(reg);
       log(`연결됨 · ${files.length}개 파일 등록 (인덱스 재사용)`);
+      void pollPrs(); // 연결되면 열린 PR 영향도 피드로
+
     } catch (err) {
       log(`등록 실패: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -440,8 +483,8 @@ async function handleImpact(msg: ImpactMessage): Promise<void> {
   const sites = hitsMe && matched ? await findUseSites(matched, msg.changedSymbols ?? []) : [];
   feed.push(msg, { mine, hitsMe, sites });
 
-  // 접속 시 백필된 과거 변경은 피드에만 채우고 팝업·카운트는 건드리지 않는다 (노이즈 방지).
-  if (msg.replay) return;
+  // 백필(replay)·PR 출처는 피드에만 채우고 팝업은 안 띄운다 (PR 은 게이트라 조용히 피드로).
+  if (msg.replay || msg.source === "pr") return;
 
   if (hitsMe && !mine) {
     impactCount += 1;

@@ -71,6 +71,11 @@
           "type": "boolean",
           "default": true,
           "description": "backendUrl 을 따로 안 정하면 같은 와이파이(LAN)에서 두뇌를 자동으로 찾아 붙는다. 고정 IP 불필요 — host 가 바뀌어도 따라감. 끄면 로컬만."
+        },
+        "ripple.watchPRs": {
+          "type": "boolean",
+          "default": true,
+          "description": "열린 PR 의 변경 영향도 변경 피드에 띄운다(저장 기준 + PR 게이트). GitHub 로그인을 사용(추가 토큰 0). 끄면 저장 기준만."
         }
       }
     },
@@ -78,6 +83,10 @@
       {
         "command": "ripple.demo",
         "title": "Ripple: 데모 — 가상 동료 변경 시뮬레이트"
+      },
+      {
+        "command": "ripple.refreshPrs",
+        "title": "Ripple: 열린 PR 영향 새로고침"
       },
       {
         "command": "ripple.reconnect",
