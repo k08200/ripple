@@ -28,6 +28,7 @@
     },
     "commands": [
       { "command": "ripple.reconnect", "title": "Ripple: 백엔드 재연결" },
+      { "command": "ripple.reindex", "title": "Ripple: 워크스페이스 재인덱싱" },
       { "command": "ripple.showFeed", "title": "Ripple: 변경 피드 열기" }
     ],
     "viewsContainers": {

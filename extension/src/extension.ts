@@ -38,6 +38,40 @@ function updateStatus(): void {
 const snapshots = new Map<string, string>();
 /** 내가 들고 있는 파일들 (`${repo}/${rel}`). 영향 매칭에 사용. */
 const myFiles = new Set<string>();
+/** rel 경로 → 심볼 인덱스. 한 번 스캔해 유지하고 저장/생성/삭제로 증분 갱신, 재연결 땐 재사용. */
+const indexMap = new Map<string, FileIndex>();
+let indexed = false;
+
+/** 인덱스 한 항목 추가/갱신 — indexMap 과 myFiles 를 함께 유지. */
+function setEntry(rel: string, idx: FileIndex): void {
+  indexMap.set(rel, idx);
+  myFiles.add(`${repoName()}/${rel}`);
+}
+function delEntry(rel: string): void {
+  indexMap.delete(rel);
+  myFiles.delete(`${repoName()}/${rel}`);
+}
+
+/** 워크스페이스를 한 번만 스캔해 인덱스를 채운다 (재연결 시엔 재사용). */
+async function ensureIndexed(): Promise<void> {
+  if (indexed) return;
+  const uris = await vscode.workspace.findFiles(CODE_GLOB, IGNORE_GLOB, MAX_FILES);
+  for (const u of uris) {
+    const rel = vscode.workspace.asRelativePath(u, false);
+    try {
+      const bytes = await vscode.workspace.fs.readFile(u);
+      setEntry(rel, extractIndex(rel, Buffer.from(bytes).toString("utf8")));
+    } catch {
+      /* 읽기 실패 파일은 생략 */
+    }
+  }
+  indexed = true;
+  log(`워크스페이스 인덱싱: ${indexMap.size}개 파일`);
+}
+
+function registerPayload(): { files: string[]; index: FileIndex[] } {
+  return { files: [...indexMap.keys()], index: [...indexMap.values()] };
+}
 
 function userId(): string {
   const cfg = vscode.workspace.getConfiguration("ripple").get<string>("userId");
@@ -88,6 +122,15 @@ export function activate(context: vscode.ExtensionContext): void {
       log("수동 재연결");
       connect();
     }),
+    vscode.commands.registerCommand("ripple.reindex", async () => {
+      indexed = false;
+      indexMap.clear();
+      myFiles.clear();
+      await ensureIndexed();
+      const { files, index } = registerPayload();
+      send({ type: "register", userId: userId(), repo: repoName(), files, index });
+      log("수동 재인덱싱");
+    }),
   );
 
   connect();
@@ -114,7 +157,7 @@ async function sendIndexOp(op: "upsert" | "remove", uri: vscode.Uri): Promise<vo
   if (/(^|\/)(node_modules|\.git|dist|build|out|\.next|vendor)\//.test(rel)) return;
   const repo = repoName();
   if (op === "remove") {
-    myFiles.delete(`${repo}/${rel}`);
+    delEntry(rel);
     snapshots.delete(uri.fsPath);
     send({ type: "index", repo, op: "remove", path: rel });
     log(`파일 삭제 반영: ${rel}`);
@@ -123,7 +166,7 @@ async function sendIndexOp(op: "upsert" | "remove", uri: vscode.Uri): Promise<vo
   try {
     const bytes = await vscode.workspace.fs.readFile(uri);
     const index = extractIndex(rel, Buffer.from(bytes).toString("utf8"));
-    myFiles.add(`${repo}/${rel}`);
+    setEntry(rel, index);
     send({ type: "index", repo, op: "upsert", path: rel, index });
     log(`파일 생성 반영: ${rel}`);
   } catch {
@@ -151,30 +194,11 @@ function onSave(doc: vscode.TextDocument): void {
 
   const rel = vscode.workspace.asRelativePath(doc.uri, false);
   const repo = repoName();
-  myFiles.add(`${repo}/${rel}`);
-  // 저장된 파일의 인덱스를 새로 떠서 함께 보낸다 → 백엔드 분석 후보가 세션 중에도 최신.
-  send({ type: "change", userId: userId(), repo, file: rel, diff, index: extractIndex(rel, after) });
+  // 저장된 파일의 인덱스를 새로 떠서 맵에 반영 + 백엔드로 동봉 전송 (세션 중에도 최신 유지).
+  const index = extractIndex(rel, after);
+  setEntry(rel, index);
+  send({ type: "change", userId: userId(), repo, file: rel, diff, index });
   log(`변경 전송: ${rel}`);
-}
-
-async function gatherWorkspace(): Promise<{ files: string[]; index: FileIndex[] }> {
-  const uris = await vscode.workspace.findFiles(CODE_GLOB, IGNORE_GLOB, MAX_FILES);
-  const repo = repoName();
-  myFiles.clear();
-  const files: string[] = [];
-  const index: FileIndex[] = [];
-  for (const u of uris) {
-    const rel = vscode.workspace.asRelativePath(u, false);
-    files.push(rel);
-    myFiles.add(`${repo}/${rel}`);
-    try {
-      const bytes = await vscode.workspace.fs.readFile(u);
-      index.push(extractIndex(rel, Buffer.from(bytes).toString("utf8")));
-    } catch {
-      /* 읽기 실패한 파일은 인덱스 생략 (경로는 유지). */
-    }
-  }
-  return { files, index };
 }
 
 function connect(): void {
@@ -191,10 +215,11 @@ function connect(): void {
     reconnectDelay = 1000;
     connected = true;
     updateStatus();
-    const { files, index } = await gatherWorkspace();
+    await ensureIndexed(); // 최초 1회만 스캔, 재연결 시 재사용
+    const { files, index } = registerPayload();
     const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index };
     send(reg);
-    log(`연결됨 · ${files.length}개 파일 등록 (${index.length} 인덱스)`);
+    log(`연결됨 · ${files.length}개 파일 등록 (인덱스 재사용)`);
   });
 
   ws.on("message", (data) => {
