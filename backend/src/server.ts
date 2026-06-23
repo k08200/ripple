@@ -1,9 +1,11 @@
 import { createServer } from "node:http";
+import { resolve } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { ClientMessage, ImpactMessage } from "./protocol.js";
 import type { KnownFile } from "./providers/provider.js";
 import { impactTouches } from "./match.js";
 import { upsertIndex, removeIndex } from "./index-store.js";
+import { loadHistory, saveHistory } from "./history-store.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
@@ -19,9 +21,17 @@ interface Client {
 const clients = new Map<WebSocket, Client>();
 let impactSeq = 0;
 
-/** 최근 영향 분석 결과 링버퍼 — 늦게 접속한 사람에게 "놓친 변경" 을 백필한다. */
+/** 최근 영향 분석 결과 링버퍼 — 늦게 접속한 사람에게 "놓친 변경" 을 백필한다. 디스크 영속. */
 const HISTORY_MAX = 50;
-const history: ImpactMessage[] = [];
+const HISTORY_FILE = process.env.RIPPLE_HISTORY ?? resolve(process.cwd(), ".ripple-history.json");
+const history: ImpactMessage[] = loadHistory(HISTORY_FILE, HISTORY_MAX);
+
+/** 잦은 디스크 쓰기 방지를 위한 디바운스 저장. */
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+function persistHistory(): void {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveHistory(HISTORY_FILE, history), 1000);
+}
 
 /** 모든 클라이언트가 들고 있는 파일의 합집합 = 영향 분석 후보군. */
 function knownFiles(): string[] {
@@ -79,6 +89,7 @@ async function handleChange(
 
   history.push(impact);
   if (history.length > HISTORY_MAX) history.shift();
+  persistHistory();
 
   console.log(
     `[change] ${msg.userId} ${msg.repo}/${msg.file} ` +
@@ -182,7 +193,10 @@ wss.on("connection", (ws) => {
 });
 
 http.listen(PORT, () => {
-  console.log(`🌊 Ripple 백엔드 가동 · ws://localhost:${PORT} · provider=${provider.name}`);
+  console.log(
+    `🌊 Ripple 백엔드 가동 · ws://localhost:${PORT} · provider=${provider.name}` +
+      (history.length > 0 ? ` · 히스토리 ${history.length}건 복원` : ""),
+  );
   if (provider.name === "mock") {
     console.log("   (ANTHROPIC_API_KEY 없음 → 휴리스틱 mock 사용. 키 넣으면 Claude 분석)");
   }
