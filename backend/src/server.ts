@@ -39,10 +39,11 @@ const HISTORY_FILE = process.env.RIPPLE_HISTORY ?? resolve(process.cwd(), ".ripp
 const history: ImpactMessage[] = loadHistory(HISTORY_FILE, HISTORY_MAX);
 
 /** 잦은 디스크 쓰기 방지를 위한 디바운스 저장. */
+const HISTORY_SAVE_DEBOUNCE_MS = 1000;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 function persistHistory(): void {
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saveHistory(HISTORY_FILE, history), 1000);
+  saveTimer = setTimeout(() => saveHistory(HISTORY_FILE, history), HISTORY_SAVE_DEBOUNCE_MS);
 }
 
 /** 모든 클라이언트가 들고 있는 파일의 합집합 = 영향 분석 후보군. */

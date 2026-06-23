@@ -9,11 +9,12 @@ import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, RegisterMes
 const CODE_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,cs,kt,swift,rs,vue,svelte,sql,proto}";
 const IGNORE_GLOB = "**/{node_modules,.git,dist,build,out,.next,vendor}/**";
 const MAX_FILES = 3000;
+const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 10_000;
 
 let socket: WebSocket | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-let reconnectDelay = 1000;
+let reconnectDelay = RECONNECT_BASE_MS;
 let output: vscode.OutputChannel;
 let feed: FeedViewProvider;
 let status: vscode.StatusBarItem;
@@ -213,7 +214,7 @@ function connect(): void {
   socket = ws;
 
   ws.on("open", async () => {
-    reconnectDelay = 1000;
+    reconnectDelay = RECONNECT_BASE_MS;
     connected = true;
     updateStatus();
     try {

@@ -1,5 +1,5 @@
 import type { AnalyzeInput, AnalyzeResult, Provider } from "./provider.js";
-import { SYSTEM_PROMPT, buildUserPrompt, coerceResult, extractJson } from "./llm.js";
+import { SYSTEM_PROMPT, buildUserPrompt, coerceResult, extractJson, LLM_MAX_TOKENS, LLM_TIMEOUT_MS } from "./llm.js";
 
 // Claude (Anthropic Messages API) 기반 영향 분석기. SDK 없이 fetch.
 // OpenRouter 로 바꾸려면 OpenRouterProvider 를 쓴다 (동일 Provider 인터페이스).
@@ -31,11 +31,11 @@ export class ClaudeProvider implements Provider {
       },
       body: JSON.stringify({
         model: this.model,
-        max_tokens: 1024,
+        max_tokens: LLM_MAX_TOKENS,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: buildUserPrompt(input) }],
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
 
     if (!res.ok) {

@@ -9,6 +9,10 @@ const MAX_KNOWN = 50;
 const MAX_DIFF_CHARS = 2500;
 const MAX_SYM = 5;
 
+/** LLM provider 공통 요청 파라미터 (claude·openrouter 공유). */
+export const LLM_TIMEOUT_MS = 30_000; // 멈춘 업스트림이 분석 파이프라인을 막지 않게
+export const LLM_MAX_TOKENS = 1024;
+
 export const SYSTEM_PROMPT = `너는 코드 변경 영향 분석기다.
 하나의 파일 diff 와 "팀 파일 목록(경로 | exports | imports)" 을 받는다.
 이 변경이 목록 안의 어떤 파일/심볼에 영향을 줄 수 있는지 판단해라.
