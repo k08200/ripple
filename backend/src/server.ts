@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
-import type { ClientMessage, ImpactMessage } from "./protocol.js";
+import type { ClientMessage, ImpactMessage, PresenceMessage } from "./protocol.js";
 import type { KnownFile } from "./providers/provider.js";
 import { impactTouches } from "./match.js";
 import { upsertIndex, removeIndex } from "./index-store.js";
@@ -62,6 +62,23 @@ function knownIndex(): KnownFile[] {
 
 function broadcast(msg: ImpactMessage): void {
   const payload = JSON.stringify(msg);
+  for (const ws of clients.keys()) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+  }
+}
+
+/** 접속자 목록을 전원에게 — userId+repo 중복 제거. (register 직후 unknown 은 제외) */
+function broadcastPresence(): void {
+  const seen = new Set<string>();
+  const peers: PresenceMessage["peers"] = [];
+  for (const c of clients.values()) {
+    if (c.userId === "unknown") continue;
+    const key = `${c.userId}@${c.repo}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    peers.push({ userId: c.userId, repo: c.repo });
+  }
+  const payload = JSON.stringify({ type: "presence", peers } satisfies PresenceMessage);
   for (const ws of clients.keys()) {
     if (ws.readyState === WebSocket.OPEN) ws.send(payload);
   }
@@ -187,6 +204,7 @@ wss.on("connection", (ws) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ ...h, replay: true }));
       }
       if (missed.length > 0) console.log(`  ↳ ${msg.userId} 에게 놓친 영향 ${missed.length}건 백필`);
+      broadcastPresence();
       return;
     }
 
@@ -232,7 +250,10 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     const c = clients.get(ws);
     clients.delete(ws);
-    if (c) console.log(`[disconnect] ${c.userId}`);
+    if (c) {
+      console.log(`[disconnect] ${c.userId}`);
+      broadcastPresence();
+    }
   });
 
   ws.on("error", (err) => console.error("[ws error]", err.message));

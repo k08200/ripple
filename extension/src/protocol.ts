@@ -54,4 +54,9 @@ export interface ImpactMessage {
   replay?: boolean;
 }
 
-export type ServerMessage = ImpactMessage;
+export interface PresenceMessage {
+  type: "presence";
+  peers: { userId: string; repo: string }[];
+}
+
+export type ServerMessage = ImpactMessage | PresenceMessage;

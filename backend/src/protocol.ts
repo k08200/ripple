@@ -77,4 +77,10 @@ export interface ImpactMessage {
   replay?: boolean;
 }
 
-export type ServerMessage = ImpactMessage;
+/** 접속자 목록 — 접속/해제 시 전원에게 브로드캐스트해 팀 presence 를 보여준다. */
+export interface PresenceMessage {
+  type: "presence";
+  peers: { userId: string; repo: string }[];
+}
+
+export type ServerMessage = ImpactMessage | PresenceMessage;

@@ -102,6 +102,29 @@ test("늦게 접속한 클라가 놓친 영향을 replay 로 백필받는다", a
   await sleep(100);
 });
 
+test("presence: 접속/해제가 전원에게 브로드캐스트된다", async () => {
+  const ann = client("ann", "api", [payIdx]);
+  await ann.ready;
+  await sleep(150);
+  const bob = client("bob", "web", [clientIdx]);
+  await bob.ready;
+  await sleep(300);
+
+  // bob 접속 후 ann 은 presence 에 두 명을 본다
+  const lastPresence = [...ann.inbox].reverse().find((m) => m.type === "presence");
+  assert.ok(lastPresence, "ann 이 presence 를 못 받음");
+  const ids = lastPresence.peers.map((p) => p.userId).sort();
+  assert.deepEqual(ids, ["ann", "bob"]);
+
+  bob.close();
+  await sleep(300);
+  // bob 해제 후 ann 은 자신만 남은 presence 를 받는다
+  const afterLeave = [...ann.inbox].reverse().find((m) => m.type === "presence");
+  assert.deepEqual(afterLeave.peers.map((p) => p.userId), ["ann"]);
+  ann.close();
+  await sleep(100);
+});
+
 test("무관한 클라는 영향 안 받음 (오탐 없음)", async () => {
   const eve = client("eve", "api", [payIdx]);
   const frank = client("frank", "ml", [{ path: "train.py", exports: [], imports: ["pandas"], refs: [] }]);

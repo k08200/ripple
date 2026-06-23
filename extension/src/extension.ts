@@ -4,7 +4,7 @@ import { WebSocket } from "ws";
 import { lineDiff } from "./diff";
 import { FeedViewProvider, openByHint } from "./feedView";
 import { extractIndex } from "./indexer";
-import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, RegisterMessage } from "./protocol";
+import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, PresenceMessage, RegisterMessage, ServerMessage } from "./protocol";
 
 const CODE_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,cs,kt,swift,rs,vue,svelte,sql,proto}";
 const IGNORE_GLOB = "**/{node_modules,.git,dist,build,out,.next,vendor}/**";
@@ -20,13 +20,16 @@ let feed: FeedViewProvider;
 let status: vscode.StatusBarItem;
 let connected = false;
 let impactCount = 0;
+let peers: PresenceMessage["peers"] = [];
 
-/** 하단 상태바: 연결 상태 + 나에게 온 영향 건수를 한눈에. */
+/** 하단 상태바: 연결 상태 + 나에게 온 영향 건수 + 접속한 팀원 수를 한눈에. */
 function updateStatus(): void {
   if (!status) return;
   if (connected) {
-    status.text = `$(pulse) Ripple${impactCount > 0 ? ` · 영향 ${impactCount}` : ""}`;
-    status.tooltip = "Ripple 연결됨 — 클릭하면 변경 피드";
+    const team = peers.length > 0 ? ` · 팀 ${peers.length}` : "";
+    status.text = `$(pulse) Ripple${impactCount > 0 ? ` · 영향 ${impactCount}` : ""}${team}`;
+    const who = peers.map((p) => `${p.userId}(${p.repo})`).join(", ");
+    status.tooltip = `Ripple 연결됨${who ? ` · 접속: ${who}` : ""} — 클릭하면 변경 피드`;
     status.backgroundColor = impactCount > 0 ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
   } else {
     status.text = "$(circle-slash) Ripple 끊김";
@@ -230,8 +233,12 @@ function connect(): void {
 
   ws.on("message", (data) => {
     try {
-      const msg = JSON.parse(data.toString()) as ImpactMessage;
+      const msg = JSON.parse(data.toString()) as ServerMessage;
       if (msg.type === "impact") handleImpact(msg);
+      else if (msg.type === "presence") {
+        peers = Array.isArray(msg.peers) ? msg.peers : [];
+        updateStatus();
+      }
     } catch {
       /* 무시 */
     }
@@ -243,6 +250,7 @@ function connect(): void {
 
 function scheduleReconnect(): void {
   connected = false;
+  peers = [];
   updateStatus();
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(connect, reconnectDelay);
