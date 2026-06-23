@@ -5,10 +5,10 @@ export interface Changed {
   removed: string[];
 }
 
-export function changedLines(diff: string): Changed {
+export function changedLines(diff: string, maxLines = 100_000): Changed {
   const added: string[] = [];
   const removed: string[] = [];
-  for (const line of diff.split("\n")) {
+  for (const line of diff.split("\n").slice(0, maxLines)) {
     if (line.startsWith("+") && !line.startsWith("+++")) added.push(line.slice(1));
     else if (line.startsWith("-") && !line.startsWith("---")) removed.push(line.slice(1));
   }
