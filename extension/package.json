@@ -4,12 +4,40 @@
   "description": "저장할 때마다 AI가 변경 영향을 읽어 영향받는 팀원에게 찔러줍니다. (any-to-any)",
   "version": "0.1.0",
   "publisher": "ripple",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Other"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Linters",
+    "Visualization"
+  ],
+  "keywords": [
+    "impact analysis",
+    "team",
+    "change notification",
+    "dependency",
+    "live",
+    "collaboration"
+  ],
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/k08200/ripple.git" },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0b7285",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/k08200/ripple.git"
+  },
+  "bugs": {
+    "url": "https://github.com/k08200/ripple/issues"
+  },
+  "homepage": "https://github.com/k08200/ripple#readme",
   "main": "./dist/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "configuration": {
       "title": "Ripple",
@@ -32,18 +60,35 @@
       }
     },
     "commands": [
-      { "command": "ripple.reconnect", "title": "Ripple: 백엔드 재연결" },
-      { "command": "ripple.reindex", "title": "Ripple: 워크스페이스 재인덱싱" },
-      { "command": "ripple.showFeed", "title": "Ripple: 변경 피드 열기" }
+      {
+        "command": "ripple.reconnect",
+        "title": "Ripple: 백엔드 재연결"
+      },
+      {
+        "command": "ripple.reindex",
+        "title": "Ripple: 워크스페이스 재인덱싱"
+      },
+      {
+        "command": "ripple.showFeed",
+        "title": "Ripple: 변경 피드 열기"
+      }
     ],
     "viewsContainers": {
       "activitybar": [
-        { "id": "ripple", "title": "Ripple", "icon": "media/ripple.svg" }
+        {
+          "id": "ripple",
+          "title": "Ripple",
+          "icon": "media/ripple.svg"
+        }
       ]
     },
     "views": {
       "ripple": [
-        { "id": "ripple.feed", "name": "변경 피드", "type": "webview" }
+        {
+          "id": "ripple.feed",
+          "name": "변경 피드",
+          "type": "webview"
+        }
       ]
     }
   },
@@ -53,7 +98,9 @@
     "build": "npm run typecheck && npm run bundle",
     "test": "node --no-warnings --test test/*.mjs",
     "watch": "npm run bundle -- --watch",
-    "vscode:prepublish": "npm run build"
+    "vscode:prepublish": "npm run build",
+    "publish": "vsce publish",
+    "publish:ovsx": "ovsx publish ripple.vsix"
   },
   "dependencies": {
     "ws": "^8.18.0"

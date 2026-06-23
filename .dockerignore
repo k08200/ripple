@@ -1,0 +1,7 @@
+**/node_modules
+**/dist
+.git
+.env
+*.vsix
+scripts/cases.real.json
+.ripple-history.json
