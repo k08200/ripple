@@ -1,5 +1,6 @@
 import type { AffectedHint, Severity } from "../protocol.js";
 import type { AnalyzeInput, AnalyzeResult, KnownFile, Provider } from "./provider.js";
+import { changedLines } from "../diff-lines.js";
 
 // 결정론적 의존 그래프 영향 분석기 (Phase 1).
 // 파일명 추측이 아니라 실제 import/참조 엣지로 판단한다. API 키 불필요.
@@ -19,21 +20,6 @@ const ROUTE_RE = /['"`](\/[\w/:.-]*)['"`]/g;
 const TS_FIELD_RE = /^\s*([A-Za-z_$][\w$]*)\??\s*:\s*\S/;
 // Prisma/스키마 필드: "  name Type" (대문자 타입으로 시작)
 const SCHEMA_FIELD_RE = /^\s*([A-Za-z_$][\w$]*)\s+[A-Z]\w*/;
-
-interface Changed {
-  added: string[];
-  removed: string[];
-}
-
-function changedLines(diff: string): Changed {
-  const added: string[] = [];
-  const removed: string[] = [];
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+") && !line.startsWith("+++")) added.push(line.slice(1));
-    else if (line.startsWith("-") && !line.startsWith("---")) removed.push(line.slice(1));
-  }
-  return { added, removed };
-}
 
 function basename(spec: string): string {
   const last = spec.split("/").pop() ?? spec;

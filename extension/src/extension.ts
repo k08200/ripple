@@ -280,7 +280,9 @@ function handleImpact(msg: ImpactMessage): void {
   }
   if (!hitsMe) return;
   const reason = msg.affected.find((a) => matchMine(a.pathHint) === matched)?.reason ?? "";
-  const text = `🌊 ${msg.author} · ${msg.repo}/${msg.file} → 너의 ${matched} 영향: ${reason}`;
+  const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + "…" : s);
+  // 서버발(發) 문자열은 길이 제한 — 과대 알림/스팸 방지.
+  const text = `🌊 ${cut(msg.author, 40)} · ${cut(msg.repo, 30)}/${cut(msg.file, 80)} → 너의 ${cut(matched ?? "", 80)} 영향: ${cut(reason, 120)}`;
   if (msg.severity === "high") void vscode.window.showWarningMessage(text);
   else void vscode.window.showInformationMessage(text);
 }

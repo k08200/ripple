@@ -1,5 +1,6 @@
 import type { AffectedHint, Severity } from "../protocol.js";
 import type { AnalyzeInput, AnalyzeResult, Provider } from "./provider.js";
+import { changedLines } from "../diff-lines.js";
 
 // API 키 없이도 데모가 굴러가도록 하는 휴리스틱 분석기.
 // 진짜 분석은 ClaudeProvider 가 한다. 여기는 "구조가 돈다"를 증명하는 fallback.
@@ -18,17 +19,6 @@ const BREAKING_SIGNALS = [
   "class ",
   "return",
 ];
-
-/** diff 에서 추가/삭제된 라인만 뽑는다. */
-function changedLines(diff: string): { added: string[]; removed: string[] } {
-  const added: string[] = [];
-  const removed: string[] = [];
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+") && !line.startsWith("+++")) added.push(line.slice(1));
-    else if (line.startsWith("-") && !line.startsWith("---")) removed.push(line.slice(1));
-  }
-  return { added, removed };
-}
 
 /** "auth.ts" -> "auth", "user-service.go" -> "user-service" */
 function baseName(path: string): string {

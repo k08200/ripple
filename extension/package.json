@@ -51,6 +51,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "bundle": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --outfile=dist/extension.js",
     "build": "npm run typecheck && npm run bundle",
+    "test": "node --no-warnings --test test/*.mjs",
     "watch": "npm run bundle -- --watch",
     "vscode:prepublish": "npm run build"
   },
