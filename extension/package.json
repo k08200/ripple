@@ -61,6 +61,11 @@
           "type": "boolean",
           "default": true,
           "description": "backendUrl 이 로컬이고 두뇌가 안 떠 있으면 자동으로 띄운다 (설치만 하면 됨). 팀 공용 두뇌를 쓰면 backendUrl 을 원격으로 두면 자동기동 안 함."
+        },
+        "ripple.team": {
+          "type": "string",
+          "default": "",
+          "description": "팀 room (공용 백엔드에서 같은 값끼리만 서로 본다). 비우면 git 원격 주소에서 자동 도출 — 같은 repo 면 자동으로 같은 팀."
         }
       }
     },

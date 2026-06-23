@@ -41,13 +41,13 @@ after(() => {
   rmSync(HIST, { force: true });
 });
 
-function client(userId, repo, index) {
+function client(userId, repo, index, team) {
   const ws = new WebSocket(WS_URL);
   const inbox = [];
   ws.on("message", (d) => inbox.push(JSON.parse(d.toString())));
   const ready = new Promise((res) =>
     ws.on("open", () => {
-      ws.send(JSON.stringify({ type: "register", userId, repo, files: index.map((i) => i.path), index }));
+      ws.send(JSON.stringify({ type: "register", userId, repo, files: index.map((i) => i.path), index, team }));
       res();
     }),
   );
@@ -103,6 +103,26 @@ test("늦게 접속한 클라가 놓친 영향을 replay 로 백필받는다", a
   assert.ok(replay.affected.some((a) => a.pathHint.includes("client.ts")));
   carol.close();
   dave.close();
+  await sleep(100);
+});
+
+test("팀 격리: 다른 team 은 서로의 변경을 못 본다 (공용 relay 멀티테넌시)", async () => {
+  // 같은 파일 구조지만 team 이 다른 두 그룹
+  const aliceA = client("aliceA", "api", [payIdx], "team-A");
+  const bobA = client("bobA", "web", [clientIdx], "team-A"); // 같은 팀
+  const eveB = client("eveB", "web", [clientIdx], "team-B"); // 다른 팀, 같은 파일
+  await Promise.all([aliceA.ready, bobA.ready, eveB.ready]);
+  await sleep(150);
+
+  aliceA.save("src/pay.ts", SIG_DIFF, payIdx);
+  await sleep(600);
+
+  // 같은 팀 bobA 는 받고, 다른 팀 eveB 는 절대 안 받는다
+  assert.ok(bobA.inbox.some((m) => m.type === "impact"), "같은 팀 bobA 가 impact 못 받음");
+  assert.ok(!eveB.inbox.some((m) => m.type === "impact"), "다른 팀 eveB 가 impact 를 받음(격리 실패!)");
+  aliceA.close();
+  bobA.close();
+  eveB.close();
   await sleep(100);
 });
 

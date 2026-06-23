@@ -15,6 +15,7 @@ export interface RegisterMessage {
   repo: string;
   files: string[];
   index?: FileIndex[];
+  team?: string;
 }
 
 export interface ChangeMessage {

@@ -25,6 +25,8 @@ export interface RegisterMessage {
   files: string[];
   /** 파일별 심볼 인덱스(옵션). 없으면 경로만으로 폴백. */
   index?: FileIndex[];
+  /** 팀 room — 같은 값끼리만 서로 본다(공용 relay 멀티테넌시). 보통 git 원격에서 자동 도출. */
+  team?: string;
 }
 
 /** 파일 저장이 일어났을 때 보내는 변경 이벤트. */

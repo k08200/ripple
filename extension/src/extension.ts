@@ -1,9 +1,10 @@
 import * as os from "node:os";
 import * as http from "node:http";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import * as vscode from "vscode";
 import { WebSocket } from "ws";
 import { shouldAutoStart, parsePort } from "./autostart";
+import { normalizeTeam } from "./team";
 import { lineDiff } from "./diff";
 import { FeedViewProvider, openByHint } from "./feedView";
 import type { UseSite } from "./feedView";
@@ -92,6 +93,22 @@ function repoName(): string {
   return vscode.workspace.workspaceFolders?.[0]?.name ?? "workspace";
 }
 
+/** 팀 room — 같은 git 원격(=같은 프로젝트)이면 자동으로 같은 room. 설정 > git remote > repo 이름. */
+function teamId(): string {
+  const cfg = vscode.workspace.getConfiguration("ripple").get<string>("team");
+  if (cfg && cfg.trim()) return cfg.trim();
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (root) {
+    try {
+      const url = execFileSync("git", ["config", "--get", "remote.origin.url"], { cwd: root, encoding: "utf8" }).trim();
+      if (url) return normalizeTeam(url);
+    } catch {
+      /* git 없음/원격 없음 → 폴백 */
+    }
+  }
+  return repoName();
+}
+
 function backendUrl(): string {
   return vscode.workspace.getConfiguration("ripple").get<string>("backendUrl") ?? "ws://localhost:7077";
 }
@@ -159,7 +176,7 @@ function runDemo(): void {
   const ws = new WebSocket(url, secret ? { headers: { authorization: `Bearer ${secret}` } } : undefined);
   const idx = { path: `${moduleBase}.ts`, exports: [symbol], imports: [], refs: [] };
   ws.on("open", () => {
-    ws.send(JSON.stringify({ type: "register", userId: "🌊 Ripple 데모", repo: "demo-teammate", files: [idx.path], index: [idx] }));
+    ws.send(JSON.stringify({ type: "register", userId: "🌊 Ripple 데모", repo: "demo-teammate", files: [idx.path], index: [idx], team: teamId() }));
     setTimeout(() => {
       const diff = `@@\n-export function ${symbol}(value: number): void\n+export function ${symbol}(value: number, currency: string): Result`;
       ws.send(JSON.stringify({ type: "change", userId: "🌊 Ripple 데모", repo: "demo-teammate", file: `${moduleBase}.ts`, diff, index: idx }));
@@ -207,7 +224,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       myFiles.clear();
       await ensureIndexed();
       const { files, index } = registerPayload();
-      send({ type: "register", userId: userId(), repo: repoName(), files, index });
+      send({ type: "register", userId: userId(), repo: repoName(), files, index, team: teamId() });
       log("수동 재인덱싱");
     }),
   );
@@ -300,7 +317,7 @@ function connect(): void {
     try {
       await ensureIndexed(); // 최초 1회만 스캔, 재연결 시 재사용
       const { files, index } = registerPayload();
-      const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index };
+      const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index, team: teamId() };
       send(reg);
       log(`연결됨 · ${files.length}개 파일 등록 (인덱스 재사용)`);
     } catch (err) {

@@ -5,7 +5,7 @@ import type { ClientMessage, ImpactMessage, PresenceMessage } from "./protocol.j
 import type { KnownFile } from "./providers/provider.js";
 import { impactTouches } from "./match.js";
 import { upsertIndex, removeIndex } from "./index-store.js";
-import { loadHistory, saveHistory } from "./history-store.js";
+import { loadHistory, saveHistory, type HistoryEntry } from "./history-store.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
@@ -28,7 +28,10 @@ interface Client {
   repo: string;
   files: Set<string>;
   index: KnownFile[];
+  team: string; // room — 같은 team 끼리만 서로 본다
 }
+
+const DEFAULT_TEAM = "default";
 
 const clients = new Map<WebSocket, Client>();
 let impactSeq = 0;
@@ -36,7 +39,7 @@ let impactSeq = 0;
 /** 최근 영향 분석 결과 링버퍼 — 늦게 접속한 사람에게 "놓친 변경" 을 백필한다. 디스크 영속. */
 const HISTORY_MAX = 50;
 const HISTORY_FILE = process.env.RIPPLE_HISTORY ?? resolve(process.cwd(), ".ripple-history.json");
-const history: ImpactMessage[] = loadHistory(HISTORY_FILE, HISTORY_MAX);
+const history: HistoryEntry[] = loadHistory(HISTORY_FILE, HISTORY_MAX);
 
 /** 잦은 디스크 쓰기 방지를 위한 디바운스 저장. */
 const HISTORY_SAVE_DEBOUNCE_MS = 1000;
@@ -46,41 +49,42 @@ function persistHistory(): void {
   saveTimer = setTimeout(() => saveHistory(HISTORY_FILE, history), HISTORY_SAVE_DEBOUNCE_MS);
 }
 
-/** 모든 클라이언트가 들고 있는 파일의 합집합 = 영향 분석 후보군. */
-function knownFiles(): string[] {
+/** 같은 team 클라이언트들이 들고 있는 파일의 합집합 = 영향 분석 후보군. */
+function knownFiles(team: string): string[] {
   const all = new Set<string>();
-  for (const c of clients.values()) for (const f of c.files) all.add(`${c.repo}/${f}`);
+  for (const c of clients.values()) if (c.team === team) for (const f of c.files) all.add(`${c.repo}/${f}`);
   return [...all];
 }
 
-/** 모든 클라이언트 인덱스의 합집합 (path 는 `${repo}/${rel}` 로 정규화). */
-function knownIndex(): KnownFile[] {
+/** 같은 team 인덱스의 합집합 (path 는 `${repo}/${rel}` 로 정규화). */
+function knownIndex(team: string): KnownFile[] {
   const byPath = new Map<string, KnownFile>();
-  for (const c of clients.values()) for (const kf of c.index) byPath.set(kf.path, kf);
+  for (const c of clients.values()) if (c.team === team) for (const kf of c.index) byPath.set(kf.path, kf);
   return [...byPath.values()];
 }
 
-function broadcast(msg: ImpactMessage): void {
+/** 같은 team 에게만 보낸다 (공용 relay 멀티테넌시 격리). */
+function broadcast(msg: ImpactMessage, team: string): void {
   const payload = JSON.stringify(msg);
-  for (const ws of clients.keys()) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+  for (const [ws, c] of clients) {
+    if (c.team === team && ws.readyState === WebSocket.OPEN) ws.send(payload);
   }
 }
 
-/** 접속자 목록을 전원에게 — userId+repo 중복 제거. (register 직후 unknown 은 제외) */
-function broadcastPresence(): void {
+/** 같은 team 접속자 목록을 그 team 에게 — userId+repo 중복 제거. */
+function broadcastPresence(team: string): void {
   const seen = new Set<string>();
   const peers: PresenceMessage["peers"] = [];
   for (const c of clients.values()) {
-    if (c.userId === "unknown") continue;
+    if (c.team !== team || c.userId === "unknown") continue;
     const key = `${c.userId}@${c.repo}`;
     if (seen.has(key)) continue;
     seen.add(key);
     peers.push({ userId: c.userId, repo: c.repo });
   }
   const payload = JSON.stringify({ type: "presence", peers } satisfies PresenceMessage);
-  for (const ws of clients.keys()) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+  for (const [ws, c] of clients) {
+    if (c.team === team && ws.readyState === WebSocket.OPEN) ws.send(payload);
   }
 }
 
@@ -110,6 +114,7 @@ function parse(raw: string): ClientMessage | null {
 
 async function handleChange(
   msg: Extract<ClientMessage, { type: "change" }>,
+  team: string,
 ): Promise<void> {
   // 비밀 파일은 분석/전송하지 않는다 (특히 외부 LLM 으로 diff 유출 방지).
   if (SECRET_FILE.test(msg.file)) {
@@ -120,8 +125,8 @@ async function handleChange(
     repo: msg.repo,
     file: msg.file,
     diff: msg.diff,
-    knownFiles: knownFiles(),
-    knownIndex: knownIndex(),
+    knownFiles: knownFiles(team),
+    knownIndex: knownIndex(team),
   });
 
   const impact: ImpactMessage = {
@@ -138,15 +143,15 @@ async function handleChange(
     ts: Date.now(),
   };
 
-  history.push(impact);
+  history.push({ team, impact });
   if (history.length > HISTORY_MAX) history.shift();
   persistHistory();
 
   console.log(
     `[change] ${msg.userId} ${msg.repo}/${msg.file} ` +
-      `→ ${impact.severity} · 영향 ${impact.affected.length}건 (${usedProvider})`,
+      `→ ${impact.severity} · 영향 ${impact.affected.length}건 (${usedProvider}) [team ${team}]`,
   );
-  broadcast(impact);
+  broadcast(impact, team);
 }
 
 const http = createServer((req, res) => {
@@ -174,7 +179,7 @@ wss.on("connection", (ws) => {
     ws.close(1013, "server full");
     return;
   }
-  clients.set(ws, { userId: "unknown", repo: "unknown", files: new Set(), index: [] });
+  clients.set(ws, { userId: "unknown", repo: "unknown", files: new Set(), index: [], team: DEFAULT_TEAM });
 
   ws.on("message", (data) => {
     const msg = parse(data.toString());
@@ -187,26 +192,28 @@ wss.on("connection", (ws) => {
         imports: fi.imports ?? [],
         refs: fi.refs ?? [],
       }));
+      const team = isStr(msg.team) && msg.team.trim() ? msg.team.trim() : DEFAULT_TEAM;
       clients.set(ws, {
         userId: msg.userId,
         repo: msg.repo,
         files: new Set(msg.files.slice(0, MAX_FILES_PER_CLIENT)),
         index,
+        team,
       });
       console.log(
-        `[register] ${msg.userId} @ ${msg.repo} (${msg.files.length} files, ${index.length} indexed)`,
+        `[register] ${msg.userId} @ ${msg.repo} (${msg.files.length} files, ${index.length} indexed) [team ${team}]`,
       );
 
-      // 놓친 변경 백필: 이 사람 파일을 가리키는 최근 영향만, 본인 변경 제외하고 replay.
+      // 놓친 변경 백필: 같은 team + 이 사람 파일을 가리키는 최근 영향만, 본인 변경 제외하고 replay.
       const fullFiles = new Set(msg.files.map((f) => `${msg.repo}/${f}`));
       const missed = history.filter(
-        (h) => h.author !== msg.userId && impactTouches(h, fullFiles),
+        (h) => h.team === team && h.impact.author !== msg.userId && impactTouches(h.impact, fullFiles),
       );
       for (const h of missed) {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ ...h, replay: true }));
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ ...h.impact, replay: true }));
       }
       if (missed.length > 0) console.log(`  ↳ ${msg.userId} 에게 놓친 영향 ${missed.length}건 백필`);
-      broadcastPresence();
+      broadcastPresence(team);
       return;
     }
 
@@ -224,7 +231,7 @@ wss.on("connection", (ws) => {
           });
         }
       }
-      handleChange(msg).catch((err) =>
+      handleChange(msg, c?.team ?? DEFAULT_TEAM).catch((err) =>
         console.error("[change] 처리 실패:", err instanceof Error ? err.message : String(err)),
       );
     }
@@ -254,7 +261,7 @@ wss.on("connection", (ws) => {
     clients.delete(ws);
     if (c) {
       console.log(`[disconnect] ${c.userId}`);
-      broadcastPresence();
+      broadcastPresence(c.team);
     }
   });
 
