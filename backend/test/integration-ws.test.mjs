@@ -76,6 +76,8 @@ test("register → change → 영향받는 클라에 impact 브로드캐스트",
   assert.ok(impact, "bob 이 impact 를 못 받음");
   assert.equal(impact.severity, "high");
   assert.ok(impact.affected.some((a) => a.pathHint.includes("client.ts")), "client.ts 가 영향자로 안 잡힘");
+  // 무엇이 바뀌었나(changedSymbols)가 와이어로 전달되는지 — 수신자 use-site 탐색의 입력.
+  assert.ok(impact.changedSymbols.includes("charge"), "changedSymbols 에 charge 없음");
   alice.close();
   bob.close();
   await sleep(100);
