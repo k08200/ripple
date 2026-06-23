@@ -6,7 +6,7 @@ const MAX_FEED_ITEMS = 100;
 const IGNORE_GLOB = "**/{node_modules,.git,dist,build,out,.next,vendor}/**";
 
 /** 영향 힌트(경로 또는 심볼)를 워크스페이스 파일로 해석해 연다. */
-async function openByHint(hint: string): Promise<void> {
+export async function openByHint(hint: string): Promise<void> {
   // 힌트는 서버/LLM 발(發) 신뢰 불가 입력 — traversal·글로브 메타문자 차단.
   if (/\.\.|[*?{}[\]]/.test(hint)) return;
   const cleaned = hint.split(/[()]/)[0].trim(); // "loginUser()" → "loginUser"
@@ -45,6 +45,8 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
   }
 
   push(item: ImpactMessage, opts: { mine: boolean; hitsMe: boolean }): void {
+    // 재연결 백필이 이미 본 항목을 다시 쌓지 않게 id 로 중복 제거.
+    if (this.history.some((h) => h.id === item.id)) return;
     const entry = { ...item, ...opts };
     this.history.push(entry);
     if (this.history.length > MAX_FEED_ITEMS) this.history.shift();

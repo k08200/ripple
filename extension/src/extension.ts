@@ -2,7 +2,7 @@ import * as os from "node:os";
 import * as vscode from "vscode";
 import { WebSocket } from "ws";
 import { lineDiff } from "./diff";
-import { FeedViewProvider } from "./feedView";
+import { FeedViewProvider, openByHint } from "./feedView";
 import { extractIndex } from "./indexer";
 import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, RegisterMessage } from "./protocol";
 
@@ -284,6 +284,9 @@ function handleImpact(msg: ImpactMessage): void {
   const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + "…" : s);
   // 서버발(發) 문자열은 길이 제한 — 과대 알림/스팸 방지.
   const text = `🌊 ${cut(msg.author, 40)} · ${cut(msg.repo, 30)}/${cut(msg.file, 80)} → 너의 ${cut(matched ?? "", 80)} 영향: ${cut(reason, 120)}`;
-  if (msg.severity === "high") void vscode.window.showWarningMessage(text);
-  else void vscode.window.showInformationMessage(text);
+  // 팝업에서 바로 영향받은 내 파일로 점프할 수 있게 "열기" 액션 제공.
+  const show = msg.severity === "high" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
+  void show(text, "열기").then((pick) => {
+    if (pick === "열기" && matched) void openByHint(matched);
+  });
 }
