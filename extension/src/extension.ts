@@ -309,7 +309,8 @@ async function handleImpact(msg: ImpactMessage): Promise<void> {
   if (!hitsMe) return;
   const reason = msg.affected.find((a) => matchMine(a.pathHint) === matched)?.reason ?? "";
   const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + "…" : s);
-  const at = sites[0] ? ` @ ${sites[0].rel.split("/").pop()}:${sites[0].line}` : "";
+  const more = sites.length > 1 ? ` 외 ${sites.length - 1}곳` : "";
+  const at = sites[0] ? ` @ ${sites[0].rel.split("/").pop()}:${sites[0].line}${more}` : "";
   // 어떻게 바뀌었나: 첫 시그니처 변경의 before→after 를 한 줄로.
   const d = (msg.changeDetails ?? [])[0];
   const how = d && d.before && d.after ? `\n${cut(d.before, 90)} → ${cut(d.after, 90)}` : "";

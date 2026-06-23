@@ -13,16 +13,22 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function locateUseSites(lines: string[], symbols: string[], max = 4): SiteHit[] {
+export function locateUseSites(
+  lines: string[],
+  symbols: string[],
+  maxPerSymbol = 3,
+  maxTotal = 8,
+): SiteHit[] {
   const sites: SiteHit[] = [];
   for (const sym of symbols) {
-    if (sym.length < MIN_SYMBOL || sites.length >= max) continue;
+    if (sym.length < MIN_SYMBOL || sites.length >= maxTotal) continue;
     const isIdent = /^[A-Za-z_$][\w$]*$/.test(sym);
     const re = isIdent ? new RegExp(`\\b${escapeRe(sym)}\\b`) : null;
-    for (let i = 0; i < lines.length; i++) {
+    let perSym = 0;
+    for (let i = 0; i < lines.length && perSym < maxPerSymbol && sites.length < maxTotal; i++) {
       if (re ? re.test(lines[i]) : lines[i].includes(sym)) {
         sites.push({ line: i + 1, text: lines[i].trim().slice(0, MAX_TEXT) });
-        break; // 심볼당 첫 사용처 하나
+        perSym += 1;
       }
     }
   }

@@ -12,10 +12,9 @@ const FILE = [
   "}",
 ].join("\n").split("\n");
 
-test("식별자의 첫 사용 라인을 찾는다 (1-based)", () => {
+test("식별자의 모든 사용 라인을 찾는다 (1-based)", () => {
   const sites = locateUseSites(FILE, ["charge"]);
-  assert.equal(sites.length, 1);
-  assert.equal(sites[0].line, 1); // import 줄이 첫 등장
+  assert.deepEqual(sites.map((s) => s.line), [1, 4]); // import 줄 + 호출 줄
   assert.match(sites[0].text, /charge/);
 });
 
@@ -31,11 +30,16 @@ test("라우트(슬래시 시작)는 부분일치로 찾는다", () => {
   assert.equal(sites[0].line, 1);
 });
 
-test("심볼당 하나, 최대 개수 제한", () => {
+test("심볼당 여러 사용처를 찾되 per-symbol 캡", () => {
+  const lines = ["a Order", "b Order", "c Order", "d Item"];
+  const sites = locateUseSites(lines, ["Order", "Item"], 2, 8); // Order 2개(캡) + Item 1개
+  assert.deepEqual(sites.map((s) => s.line), [1, 2, 4]);
+});
+
+test("total 캡이 per-symbol 보다 우선", () => {
   const lines = ["a Order", "b Order", "c Item", "d Item"];
-  const sites = locateUseSites(lines, ["Order", "Item"], 4);
-  assert.equal(sites.length, 2); // Order 첫 줄 + Item 첫 줄
-  assert.deepEqual(sites.map((s) => s.line), [1, 3]);
+  const sites = locateUseSites(lines, ["Order", "Item"], 3, 3);
+  assert.equal(sites.length, 3); // 총 3개에서 멈춤
 });
 
 test("3자 미만 심볼은 무시 (노이즈 방지)", () => {
