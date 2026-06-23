@@ -28,12 +28,13 @@ LSP의 Find References와 다른 점: **네가 모르는 변경**을, **다른 r
 
 ## 빠른 시작
 
-1. 팀이 공용 백엔드(두뇌)를 띄운다 — [저장소](https://github.com/k08200/ripple) 참고:
-   ```bash
-   npm run brain          # ws://localhost:7077 (graph 엔진, 키 불필요)
-   ```
-2. 이 확장을 깔고 설정에서 `ripple.backendUrl`을 그 주소로.
-3. 끝. 저장할 때마다 영향이 흐른다. 좌측 🌊 아이콘 = 변경 피드, 하단 상태바 = 연결/팀/영향 수.
+**혼자/체험 — 그냥 설치하면 끝.** 확장이 로컬 두뇌를 자동으로 띄운다(별도 배포 0). 저장하면 변경 피드에 흐른다.
+
+**팀으로 — 공용 두뇌 하나만.** 여러 컴퓨터를 잇는 relay가 필요하다(이게 "팀원이 저장하면 너에게"의 조건):
+1. 어느 호스트든 두뇌 하나: `npx ripple-brain` (또는 Docker — [DEPLOY.md](https://github.com/k08200/ripple/blob/main/DEPLOY.md))
+2. 각자 설정 `ripple.backendUrl`을 그 주소로 (원격이면 자동기동은 자동으로 꺼짐).
+
+좌측 🌊 아이콘 = 변경 피드, 하단 상태바 = 연결/팀/영향 수.
 
 ## 설정
 
@@ -42,6 +43,7 @@ LSP의 Find References와 다른 점: **네가 모르는 변경**을, **다른 r
 | `ripple.backendUrl` | `ws://localhost:7077` | 백엔드 WebSocket 주소 |
 | `ripple.userId` | (OS 사용자명) | 팀에서 나를 식별하는 이름 |
 | `ripple.secret` | (없음) | 공유 백엔드 인증 토큰(백엔드 `RIPPLE_SECRET`와 일치). 비우면 인증 없음(로컬용) |
+| `ripple.autoStartBrain` | `true` | 로컬 주소면 두뇌를 자동 기동(설치만 하면 됨). 팀 공용 두뇌를 쓰면 `backendUrl`을 원격으로 두면 자동기동 안 함 |
 
 ## 명령
 

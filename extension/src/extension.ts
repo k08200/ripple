@@ -1,6 +1,9 @@
 import * as os from "node:os";
+import * as http from "node:http";
+import { spawn, type ChildProcess } from "node:child_process";
 import * as vscode from "vscode";
 import { WebSocket } from "ws";
+import { shouldAutoStart, parsePort } from "./autostart";
 import { lineDiff } from "./diff";
 import { FeedViewProvider, openByHint } from "./feedView";
 import type { UseSite } from "./feedView";
@@ -20,6 +23,7 @@ let reconnectDelay = RECONNECT_BASE_MS;
 let output: vscode.OutputChannel;
 let feed: FeedViewProvider;
 let status: vscode.StatusBarItem;
+let brainProc: ChildProcess | undefined;
 let connected = false;
 let impactCount = 0;
 let peers: PresenceMessage["peers"] = [];
@@ -98,7 +102,45 @@ function isTracked(doc: vscode.TextDocument): boolean {
   return !/(^|\/)(node_modules|\.git|dist|build|out|\.next|vendor)\//.test(rel);
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+/** 로컬에 두뇌가 떠 있나? (자동기동 중복 방지) */
+function brainAlive(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.get({ host: "127.0.0.1", port, path: "/health", timeout: 500 }, (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+/** 로컬 모드면 번들된 두뇌를 자동으로 띄운다 → "설치만 하면 됨". 팀 모드(원격)면 안 띄움. */
+async function maybeStartBrain(context: vscode.ExtensionContext): Promise<void> {
+  const enabled = vscode.workspace.getConfiguration("ripple").get<boolean>("autoStartBrain", true);
+  const url = backendUrl();
+  if (!shouldAutoStart(url, enabled)) return;
+  const port = parsePort(url);
+  if (await brainAlive(port)) return; // 이미 떠 있으면 그대로 사용
+
+  const brainPath = vscode.Uri.joinPath(context.extensionUri, "dist", "brain.js").fsPath;
+  try {
+    // VS Code 의 node 런타임으로 실행 (PATH 의 node 에 의존하지 않음).
+    brainProc = spawn(process.execPath, [brainPath], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PORT: String(port) },
+      stdio: "ignore",
+    });
+    brainProc.on("error", (e) => log(`두뇌 자동기동 실패: ${e.message}`));
+    log(`로컬 두뇌 자동 기동 (포트 ${port})`);
+    await new Promise((r) => setTimeout(r, 600)); // 기동 잠깐 대기 (이후 connect 재시도가 마저 처리)
+  } catch (e) {
+    log(`두뇌 spawn 오류: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   output = vscode.window.createOutputChannel("Ripple");
   feed = new FeedViewProvider();
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -139,6 +181,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  await maybeStartBrain(context);
   connect();
   log(`Ripple 활성화 · user=${userId()} · repo=${repoName()}`);
 }
@@ -146,6 +189,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   socket?.close();
+  brainProc?.kill(); // 자동 기동한 로컬 두뇌도 같이 정리
 }
 
 function log(msg: string): void {

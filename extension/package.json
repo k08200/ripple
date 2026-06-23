@@ -56,6 +56,11 @@
           "type": "string",
           "default": "",
           "description": "공유 백엔드 인증 토큰 (백엔드 RIPPLE_SECRET 과 일치). 비우면 인증 없음(로컬용)."
+        },
+        "ripple.autoStartBrain": {
+          "type": "boolean",
+          "default": true,
+          "description": "backendUrl 이 로컬이고 두뇌가 안 떠 있으면 자동으로 띄운다 (설치만 하면 됨). 팀 공용 두뇌를 쓰면 backendUrl 을 원격으로 두면 자동기동 안 함."
         }
       }
     },
@@ -95,7 +100,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "bundle": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --outfile=dist/extension.js",
-    "build": "npm run typecheck && npm run bundle",
+    "bundle:brain": "esbuild ../backend/src/server.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/brain.js",
+    "build": "npm run typecheck && npm run bundle && npm run bundle:brain",
     "test": "node --no-warnings --test test/*.mjs",
     "watch": "npm run bundle -- --watch",
     "vscode:prepublish": "npm run build",
