@@ -24,6 +24,8 @@ export interface ChangeDetail {
   symbol: string;
   before?: string;
   after?: string;
+  /** 사람 말 요약 (예: "currency 인자 추가 · 반환 void → Receipt"). */
+  note?: string;
 }
 
 export interface AnalyzeResult {

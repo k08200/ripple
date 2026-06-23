@@ -92,6 +92,7 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
   .site code { color: var(--vscode-foreground); }
   .delta { margin: 3px 0 2px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
   .delta .sym { font-weight: 600; }
+  .delta .note { color: var(--vscode-charts-yellow, #d29922); margin-left: 6px; font-weight: 500; }
   .delta .before { color: var(--vscode-gitDecoration-deletedResourceForeground, #e5534b); }
   .delta .after { color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); }
   .badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
@@ -122,7 +123,8 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
       const deltas = (m.changeDetails || []).map(d => {
         const b = d.before ? '<span class="before">- ' + esc(d.before) + '</span>' : '';
         const a = d.after ? '<span class="after">+ ' + esc(d.after) + '</span>' : '';
-        return '<div class="delta"><span class="sym">' + esc(d.symbol) + '</span><br>' + b + (b && a ? '<br>' : '') + a + '</div>';
+        const note = d.note ? '<span class="note">' + esc(d.note) + '</span>' : '';
+        return '<div class="delta"><span class="sym">' + esc(d.symbol) + '</span>' + note + '<br>' + b + (b && a ? '<br>' : '') + a + '</div>';
       }).join('');
       // 내게 영향이면, 내 코드의 실제 사용 위치(file:line + 코드)를 클릭 가능하게 보여준다.
       const sites = (m.sites || []).map(s => '<div class="site" title="이 줄로 점프" data-path="' + esc(s.rel) + '" data-line="' + s.line + '"><span class="loc">' + esc(s.rel.split('/').pop()) + ':' + s.line + '</span>  <code>' + esc(s.text) + '</code></div>').join('');

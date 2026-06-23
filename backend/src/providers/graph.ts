@@ -1,6 +1,7 @@
 import type { AffectedHint, Severity } from "../protocol.js";
 import type { AnalyzeInput, AnalyzeResult, ChangeDetail, KnownFile, Provider } from "./provider.js";
 import { changedLines } from "../diff-lines.js";
+import { describeSignatureChange } from "../sigdiff.js";
 
 const MAX_DETAIL_LEN = 160;
 
@@ -27,7 +28,10 @@ function buildChangeDetails(added: string[], removed: string[], symbols: Iterabl
   for (const symbol of symbols) {
     const before = findDecl(removed, symbol);
     const after = findDecl(added, symbol);
-    if (before || after) out.push({ symbol, before, after });
+    if (before || after) {
+      const note = before && after ? describeSignatureChange(before, after) : undefined;
+      out.push({ symbol, before, after, note });
+    }
     if (out.length >= 6) break;
   }
   return out;

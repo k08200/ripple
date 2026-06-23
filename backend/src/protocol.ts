@@ -57,6 +57,7 @@ export interface ChangeDetail {
   symbol: string;
   before?: string;
   after?: string;
+  note?: string;
 }
 
 /** AI가 짚은 "영향 갈 만한 곳" 한 건. */

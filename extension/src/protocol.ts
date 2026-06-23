@@ -40,6 +40,7 @@ export interface ChangeDetail {
   symbol: string;
   before?: string;
   after?: string;
+  note?: string;
 }
 
 export interface AffectedHint {

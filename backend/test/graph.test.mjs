@@ -41,6 +41,7 @@ test("changeDetails: 시그니처 before→after 를 캡처한다 (어떻게 바
   assert.ok(d, "charge 의 변경 상세 없음");
   assert.match(d.before, /\(a: number\): void/);
   assert.match(d.after, /\(a: number, b: string\): Receipt/);
+  assert.equal(d.note, "b 인자 추가 · 반환 void → Receipt"); // 사람 말 요약
 });
 
 test("changeDetails: 인터페이스 필드 제거도 before 로 캡처 (계약 변경의 '어떻게')", async () => {

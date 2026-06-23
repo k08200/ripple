@@ -311,9 +311,13 @@ async function handleImpact(msg: ImpactMessage): Promise<void> {
   const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + "…" : s);
   const more = sites.length > 1 ? ` 외 ${sites.length - 1}곳` : "";
   const at = sites[0] ? ` @ ${sites[0].rel.split("/").pop()}:${sites[0].line}${more}` : "";
-  // 어떻게 바뀌었나: 첫 시그니처 변경의 before→after 를 한 줄로.
+  // 어떻게 바뀌었나: 사람 말 요약(note)이 있으면 그걸, 없으면 before→after 원문.
   const d = (msg.changeDetails ?? [])[0];
-  const how = d && d.before && d.after ? `\n${cut(d.before, 90)} → ${cut(d.after, 90)}` : "";
+  const how = d?.note
+    ? `\n${d.symbol}: ${cut(d.note, 140)}`
+    : d && d.before && d.after
+      ? `\n${cut(d.before, 90)} → ${cut(d.after, 90)}`
+      : "";
   // 서버발(發) 문자열은 길이 제한 — 과대 알림/스팸 방지.
   const text = `🌊 ${cut(msg.author, 40)} · ${cut(msg.repo, 30)}/${cut(msg.file, 80)} → 너의 ${cut(matched ?? "", 80)} 영향${at}: ${cut(reason, 120)}${how}`;
   // 팝업의 "열기" → 사용처 줄이 있으면 그 줄로, 없으면 파일로.
