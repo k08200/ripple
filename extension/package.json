@@ -3,7 +3,7 @@
   "displayName": "Ripple — Live Change Impact",
   "description": "저장할 때마다 AI가 변경 영향을 읽어 영향받는 팀원에게 찔러줍니다. (any-to-any)",
   "version": "0.1.0",
-  "publisher": "ripple",
+  "publisher": "k08200",
   "engines": {
     "vscode": "^1.85.0"
   },
