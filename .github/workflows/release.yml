@@ -1,0 +1,58 @@
+name: Release
+
+# v* 태그를 밀면: 테스트 게이트 → .vsix 패키징 → GitHub Release 첨부 →
+# Docker 이미지 GHCR 푸시. 시크릿이 있으면 Marketplace/Open VSX 까지 게시.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install
+      - run: npm run build
+      - name: Tests (release gate)
+        run: node --no-warnings --test backend/test/*.mjs extension/test/*.mjs
+      - name: Package .vsix
+        run: cd extension && npx --yes @vscode/vsce package --no-dependencies -o ripple.vsix
+      - name: Attach .vsix to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: extension/ripple.vsix
+      - name: Publish to VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        run: cd extension && npx --yes @vscode/vsce publish -p "$VSCE_PAT"
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        run: cd extension && npx --yes ovsx publish ripple.vsix -p "$OVSX_PAT"
+
+  brain-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-brain:latest
+            ghcr.io/${{ github.repository }}-brain:${{ github.ref_name }}

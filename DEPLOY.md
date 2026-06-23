@@ -85,3 +85,16 @@ npx --yes ovsx publish ripple.vsix -p <openvsx-token>
 - [ ] `RIPPLE_SECRET` 설정 + 익스텐션 `ripple.secret` 일치
 - [ ] (공개 시) `package.json` publisher를 실제 ID로 교체
 - [ ] 외부망이면 `wss://`(TLS) 프록시
+
+---
+
+## ③ 자동 릴리스 (CI)
+
+버전 태그를 밀면 .github/workflows/release.yml 이 전부 한다:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+→ 테스트 게이트 → .vsix 패키징 → **GitHub Release 에 .vsix 첨부** → **Docker 이미지 GHCR 푸시**(`ghcr.io/k08200/ripple-brain`).
+GitHub repo Secrets 에 `VSCE_PAT`(Marketplace) / `OVSX_PAT`(Open VSX) 를 넣으면 공개 게시까지 자동.
