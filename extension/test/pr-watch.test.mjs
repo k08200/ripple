@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseOwnerRepo } from "../src/pr-watch.ts";
+import { parseOwnerRepo } from "../src/team.ts";
 
 test("github 원격에서 owner/repo 추출 (https/ssh/.git)", () => {
   assert.deepEqual(parseOwnerRepo("https://github.com/k08200/ripple.git"), { owner: "k08200", repo: "ripple" });

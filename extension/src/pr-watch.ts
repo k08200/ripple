@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { parseOwnerRepo } from "./team";
 
 // 열린 PR 을 GitHub 에서 가져와 "변경"으로 만들어 두뇌에 보낸다 → 같은 엔진이 분석 →
 // 피드에 PR 영향이 뜬다. VS Code 의 GitHub 로그인을 쓰므로 추가 토큰 설정 0.
@@ -8,12 +9,6 @@ export interface PrChange {
   author: string;
   file: string;
   diff: string;
-}
-
-/** git 원격 URL 에서 owner/repo 추출 (github 만). */
-export function parseOwnerRepo(remote: string): { owner: string; repo: string } | undefined {
-  const m = remote.match(/github\.com[:/]([^/]+)\/([^/.\s]+)/i);
-  return m ? { owner: m[1], repo: m[2].replace(/\.git$/, "") } : undefined;
 }
 
 async function ghToken(interactive: boolean): Promise<string | undefined> {
