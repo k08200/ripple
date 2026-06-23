@@ -9,6 +9,13 @@ import { loadHistory, saveHistory } from "./history-store.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
+const MAX_PAYLOAD = 512 * 1024; // 인바운드 메시지 상한 (DoS 방지)
+const MAX_CLIENTS = 200;
+const MAX_FILES_PER_CLIENT = 5000;
+const RIPPLE_SECRET = (process.env.RIPPLE_SECRET ?? "").trim();
+// 비밀이 담길 만한 파일은 분석(특히 외부 LLM 전송)에서 제외.
+const SECRET_FILE = /(^|\/)\.env|\.(pem|key|p12|pfx)$|secret|credential/i;
+
 const provider = selectProvider();
 
 // 어떤 비동기 경로에서 새는 예외도 프로세스를 죽이지 않게.
@@ -86,6 +93,11 @@ function parse(raw: string): ClientMessage | null {
 async function handleChange(
   msg: Extract<ClientMessage, { type: "change" }>,
 ): Promise<void> {
+  // 비밀 파일은 분석/전송하지 않는다 (특히 외부 LLM 으로 diff 유출 방지).
+  if (SECRET_FILE.test(msg.file)) {
+    console.log(`[skip] 비밀 파일 분석 제외: ${msg.repo}/${msg.file}`);
+    return;
+  }
   const { result, usedProvider } = await analyze(provider, {
     repo: msg.repo,
     file: msg.file,
@@ -127,9 +139,21 @@ const http = createServer((req, res) => {
   res.end();
 });
 
-const wss = new WebSocketServer({ server: http });
+const wss = new WebSocketServer({
+  server: http,
+  maxPayload: MAX_PAYLOAD,
+  // RIPPLE_SECRET 가 설정돼 있으면 Bearer 토큰 검증 (미설정 시 로컬용으로 개방).
+  verifyClient: (info: { req: import("node:http").IncomingMessage }) => {
+    if (!RIPPLE_SECRET) return true;
+    return info.req.headers["authorization"] === `Bearer ${RIPPLE_SECRET}`;
+  },
+});
 
 wss.on("connection", (ws) => {
+  if (clients.size >= MAX_CLIENTS) {
+    ws.close(1013, "server full");
+    return;
+  }
   clients.set(ws, { userId: "unknown", repo: "unknown", files: new Set(), index: [] });
 
   ws.on("message", (data) => {
@@ -137,7 +161,7 @@ wss.on("connection", (ws) => {
     if (!msg) return;
 
     if (msg.type === "register") {
-      const index: KnownFile[] = (msg.index ?? []).map((fi) => ({
+      const index: KnownFile[] = (msg.index ?? []).slice(0, MAX_FILES_PER_CLIENT).map((fi) => ({
         path: `${msg.repo}/${fi.path}`,
         exports: fi.exports ?? [],
         imports: fi.imports ?? [],
@@ -146,7 +170,7 @@ wss.on("connection", (ws) => {
       clients.set(ws, {
         userId: msg.userId,
         repo: msg.repo,
-        files: new Set(msg.files),
+        files: new Set(msg.files.slice(0, MAX_FILES_PER_CLIENT)),
         index,
       });
       console.log(

@@ -23,6 +23,11 @@
           "type": "string",
           "default": "",
           "description": "팀에서 나를 식별하는 이름 (비우면 OS 사용자명)"
+        },
+        "ripple.secret": {
+          "type": "string",
+          "default": "",
+          "description": "공유 백엔드 인증 토큰 (백엔드 RIPPLE_SECRET 과 일치). 비우면 인증 없음(로컬용)."
         }
       }
     },

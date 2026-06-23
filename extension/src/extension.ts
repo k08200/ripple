@@ -207,8 +207,9 @@ function connect(): void {
   socket?.close();
 
   const url = backendUrl();
+  const secret = vscode.workspace.getConfiguration("ripple").get<string>("secret")?.trim();
   log(`연결 시도: ${url}`);
-  const ws = new WebSocket(url);
+  const ws = new WebSocket(url, secret ? { headers: { authorization: `Bearer ${secret}` } } : undefined);
   socket = ws;
 
   ws.on("open", async () => {
