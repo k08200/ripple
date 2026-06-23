@@ -36,6 +36,12 @@ export interface IndexMessage {
 
 export type ClientMessage = RegisterMessage | ChangeMessage | IndexMessage;
 
+export interface ChangeDetail {
+  symbol: string;
+  before?: string;
+  after?: string;
+}
+
 export interface AffectedHint {
   pathHint: string;
   reason: string;
@@ -51,6 +57,7 @@ export interface ImpactMessage {
   severity: Severity;
   affected: AffectedHint[];
   changedSymbols: string[];
+  changeDetails: ChangeDetail[];
   ts: number;
   replay?: boolean;
 }

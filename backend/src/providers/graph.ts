@@ -1,6 +1,27 @@
 import type { AffectedHint, Severity } from "../protocol.js";
-import type { AnalyzeInput, AnalyzeResult, KnownFile, Provider } from "./provider.js";
+import type { AnalyzeInput, AnalyzeResult, ChangeDetail, KnownFile, Provider } from "./provider.js";
 import { changedLines } from "../diff-lines.js";
+
+const MAX_DETAIL_LEN = 160;
+
+/** lines 에서 `export ... sym` 선언 줄을 찾아 다듬어 돌려준다. */
+function findDecl(lines: string[], sym: string): string | undefined {
+  const re = new RegExp(`\\bexport\\b.*\\b${sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+  const hit = lines.find((l) => re.test(l));
+  return hit ? hit.trim().slice(0, MAX_DETAIL_LEN) : undefined;
+}
+
+/** 바뀐 export 심볼들의 before→after 선언을 모은다 (어떻게 바뀌었나). */
+function buildChangeDetails(added: string[], removed: string[], symbols: Iterable<string>): ChangeDetail[] {
+  const out: ChangeDetail[] = [];
+  for (const symbol of symbols) {
+    const before = findDecl(removed, symbol);
+    const after = findDecl(added, symbol);
+    if (before || after) out.push({ symbol, before, after });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
 
 // 결정론적 의존 그래프 영향 분석기 (Phase 1).
 // 파일명 추측이 아니라 실제 import/참조 엣지로 판단한다. API 키 불필요.
@@ -135,6 +156,10 @@ export class GraphProvider implements Provider {
             : "내부 변경";
     const summary = `${input.file} ${verb} · ${what} (영향 ${affected.length}건)`;
 
-    return { summary, severity, affected, changedSymbols: [...changedKeys] };
+    // 어떻게 바뀌었나: export 심볼(수정/제거/추가)의 before→after 선언.
+    const exportSyms = new Set<string>([...modified, ...expRemoved, ...expAdded]);
+    const changeDetails = buildChangeDetails(added, removed, exportSyms);
+
+    return { summary, severity, affected, changedSymbols: [...changedKeys], changeDetails };
   }
 }

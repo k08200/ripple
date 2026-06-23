@@ -19,6 +19,13 @@ export interface AnalyzeInput {
   knownIndex?: KnownFile[];
 }
 
+/** 바뀐 심볼의 before→after 선언 (어떻게 바뀌었나). 제거면 after 없음, 추가면 before 없음. */
+export interface ChangeDetail {
+  symbol: string;
+  before?: string;
+  after?: string;
+}
+
 export interface AnalyzeResult {
   summary: string;
   severity: Severity;
@@ -26,6 +33,8 @@ export interface AnalyzeResult {
   /** 이 변경에서 실제로 바뀐 심볼/라우트(예: ["charge","/v2/login"]).
    *  수신자 쪽에서 자기 파일의 '사용 위치'를 찾는 데 쓴다. */
   changedSymbols: string[];
+  /** 바뀐 export 의 before→after 선언 (시그니처 변경의 '어떻게'). */
+  changeDetails: ChangeDetail[];
 }
 
 /** AI 영향 분석 백엔드 추상화. 클코/코덱스/목 등으로 교체 가능. */

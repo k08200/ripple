@@ -57,6 +57,7 @@ export class HybridProvider implements Provider {
       severity: graphResult.severity,
       affected: merged.slice(0, MAX_AFFECTED),
       changedSymbols: graphResult.changedSymbols,
+      changeDetails: graphResult.changeDetails,
     };
   }
 }

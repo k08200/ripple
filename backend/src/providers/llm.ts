@@ -82,5 +82,6 @@ export function coerceResult(parsed: unknown): AnalyzeResult {
     severity,
     affected,
     changedSymbols: [],
+    changeDetails: [],
   };
 }

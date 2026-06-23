@@ -87,6 +87,10 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
   .site:hover { background: var(--vscode-editor-inactiveSelectionBackground); }
   .site .loc { color: var(--vscode-textLink-foreground); }
   .site code { color: var(--vscode-foreground); }
+  .delta { margin: 3px 0 2px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .delta .sym { font-weight: 600; }
+  .delta .before { color: var(--vscode-gitDecoration-deletedResourceForeground, #e5534b); }
+  .delta .after { color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); }
   .badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   .you { background: var(--vscode-focusBorder); color: #fff; }
 </style></head>
@@ -111,6 +115,12 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
       div.className = 'item ' + m.severity + (m.hitsMe ? ' hit' : '');
       const when = new Date(m.ts).toLocaleTimeString();
       const aff = (m.affected || []).map(a => '<div class="aff" title="클릭하면 열기" data-path="' + esc(a.pathHint) + '">↳ <b>' + esc(a.pathHint) + '</b> — ' + esc(a.reason) + '</div>').join('');
+      // 어떻게 바뀌었나: 시그니처 before→after.
+      const deltas = (m.changeDetails || []).map(d => {
+        const b = d.before ? '<span class="before">- ' + esc(d.before) + '</span>' : '';
+        const a = d.after ? '<span class="after">+ ' + esc(d.after) + '</span>' : '';
+        return '<div class="delta"><span class="sym">' + esc(d.symbol) + '</span><br>' + b + (b && a ? '<br>' : '') + a + '</div>';
+      }).join('');
       // 내게 영향이면, 내 코드의 실제 사용 위치(file:line + 코드)를 클릭 가능하게 보여준다.
       const sites = (m.sites || []).map(s => '<div class="site" title="이 줄로 점프" data-path="' + esc(s.rel) + '" data-line="' + s.line + '"><span class="loc">' + esc(s.rel.split('/').pop()) + ':' + s.line + '</span>  <code>' + esc(s.text) + '</code></div>').join('');
       div.innerHTML =
@@ -120,7 +130,7 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
           '<span style="flex:1"></span><span class="path">' + when + '</span>' +
         '</div>' +
         '<div class="path">' + esc(m.repo) + '/' + esc(m.file) + '</div>' +
-        '<div class="summary">' + esc(m.summary) + '</div>' + aff + sites;
+        '<div class="summary">' + esc(m.summary) + '</div>' + deltas + aff + sites;
       list.prepend(div);
     });
   </script>

@@ -52,6 +52,13 @@ export interface IndexMessage {
 
 export type ClientMessage = RegisterMessage | ChangeMessage | IndexMessage;
 
+/** 바뀐 심볼의 before→after 선언 (어떻게 바뀌었나). */
+export interface ChangeDetail {
+  symbol: string;
+  before?: string;
+  after?: string;
+}
+
 /** AI가 짚은 "영향 갈 만한 곳" 한 건. */
 export interface AffectedHint {
   /** 영향받을 파일 경로나 심볼 (예: "web/src/api/auth.ts" 또는 "loginUser()"). */
@@ -73,6 +80,8 @@ export interface ImpactMessage {
   affected: AffectedHint[];
   /** 실제로 바뀐 심볼/라우트. 수신자가 자기 파일의 사용 위치를 찾는 데 쓴다. */
   changedSymbols: string[];
+  /** 바뀐 export 의 before→after 선언 (시그니처 변경의 '어떻게'). */
+  changeDetails: ChangeDetail[];
   /** epoch millis. */
   ts: number;
   /** 접속 시 백필된 과거 변경이면 true — 클라는 알림 팝업 없이 피드에만 채운다. */
