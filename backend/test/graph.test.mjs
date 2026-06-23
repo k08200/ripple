@@ -43,6 +43,19 @@ test("changeDetails: 시그니처 before→after 를 캡처한다 (어떻게 바
   assert.match(d.after, /\(a: number, b: string\): Receipt/);
 });
 
+test("changeDetails: 인터페이스 필드 제거도 before 로 캡처 (계약 변경의 '어떻게')", async () => {
+  const r = await run({
+    repo: "shared",
+    file: "src/types/order.ts",
+    diff: "@@\n export interface Order {\n   id: string\n-  legacyCode: string\n   total: number\n }",
+    knownIndex: [idx("api/orders.ts", [], ["shared/types/order"], ["legacyCode"])],
+  });
+  const d = r.changeDetails.find((x) => x.symbol === "legacyCode");
+  assert.ok(d, "legacyCode 필드 변경 상세 없음");
+  assert.match(d.before, /legacyCode: string/);
+  assert.equal(d.after, undefined); // 제거라 after 없음
+});
+
 test("추가만 된 export(additive) → low", async () => {
   const r = await run({
     repo: "api",

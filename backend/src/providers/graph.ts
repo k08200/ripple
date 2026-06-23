@@ -4,10 +4,20 @@ import { changedLines } from "../diff-lines.js";
 
 const MAX_DETAIL_LEN = 160;
 
+const escRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /** lines 에서 `export ... sym` 선언 줄을 찾아 다듬어 돌려준다. */
 function findDecl(lines: string[], sym: string): string | undefined {
-  const re = new RegExp(`\\bexport\\b.*\\b${sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+  const re = new RegExp(`\\bexport\\b.*\\b${escRe(sym)}\\b`);
   const hit = lines.find((l) => re.test(l));
+  return hit ? hit.trim().slice(0, MAX_DETAIL_LEN) : undefined;
+}
+
+/** lines 에서 인터페이스/스키마 필드 `name: Type` / `name Type` 선언 줄을 찾는다. */
+function findFieldDecl(lines: string[], field: string): string | undefined {
+  const f = escRe(field);
+  const re = new RegExp(`^\\s*${f}\\??\\s*:|^\\s*${f}\\s+[A-Z]`);
+  const hit = lines.find((l) => re.test(l) && !/[(){}]/.test(l)); // 함수/객체 라인 제외
   return hit ? hit.trim().slice(0, MAX_DETAIL_LEN) : undefined;
 }
 
@@ -159,6 +169,18 @@ export class GraphProvider implements Provider {
     // 어떻게 바뀌었나: export 심볼(수정/제거/추가)의 before→after 선언.
     const exportSyms = new Set<string>([...modified, ...expRemoved, ...expAdded]);
     const changeDetails = buildChangeDetails(added, removed, exportSyms);
+    // 인터페이스/스키마 필드 변경(제거/추가/타입변경)도 before→after 로.
+    const fieldSyms = new Set<string>([...collectFields(removed), ...collectFields(added)]);
+    const seen = new Set(changeDetails.map((d) => d.symbol));
+    for (const f of fieldSyms) {
+      if (changeDetails.length >= 6 || seen.has(f)) continue;
+      const before = findFieldDecl(removed, f);
+      const after = findFieldDecl(added, f);
+      if (before || after) {
+        changeDetails.push({ symbol: f, before, after });
+        seen.add(f);
+      }
+    }
 
     return { summary, severity, affected, changedSymbols: [...changedKeys], changeDetails };
   }
