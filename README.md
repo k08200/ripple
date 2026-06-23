@@ -2,138 +2,101 @@
 
 # 🌊 Ripple
 
-### 라이브 변경 영향 분석 — 저장하면, AI가 영향받는 팀원에게 찔러준다
+### 라이브 변경 영향 분석 — 코드가 바뀌면, *네 코드의 어디가 어떻게 깨지는지* 자동으로 알려준다
 
-**각자 쓰던 VS Code에 익스텐션 하나 깔면, 파일을 저장할 때마다 AI가 그 변경이 누구한테 영향 가는지 읽어서 영향받는 팀원에게 알려줍니다. (any-to-any)**
+**같은 팀에 익스텐션 하나씩 깔면 끝.** 누가 함수·타입·스키마를 바꾸면, 그걸 쓰는 사람에게
+**"너의 payment-client.ts:42 가 이렇게 깨진다"** 가 저장 순간(라이브) + PR 시점(게이트)에 뜬다.
 
 </div>
 
 ---
 
-## 한 줄
+## 핵심 — 무엇이·어떻게·어디서·얼마나
 
-> 백엔드가 저장하면 → 영향받는 프론트가 본다.
-> 백엔드 → 백엔드도, 프론트 → 프론트도 마찬가지.
-> **역할로 라우팅하지 않는다. 코드 의존(시그니처·스키마·export·라우트)으로 라우팅한다.**
+```
+🌊 alice · payment-api/src/payment.ts → 너의 payment-client.ts:42 외 2곳 영향
+   charge: currency 인자 추가 · 반환 Promise<void> → Promise<Receipt>
+   📍 payment-client.ts:42  const r = await charge(100)     ← 클릭하면 그 줄로 점프
+```
 
-Git은 커밋된 스냅샷만 본다. Ripple은 **저장하는 순간**을 잡아서 라이브로 흘린다.
+- **무엇이** 바뀌었나 — 바뀐 심볼(`charge`)
+- **어떻게** — 시그니처 before→after + 사람 말 요약(`currency 인자 추가`)
+- **어디서** 깨지나 — 네 코드의 실제 사용 줄(클릭 점프)
+- **얼마나** — severity(계약 변경=경고, 추가=주의, 내부=조용)
+
+> LSP의 Find References와 다른 점: **네가 모르는 변경**을, **다른 repo**에서, **저장/PR 순간** 너에게 밀어준다.
 
 ---
 
-## 구조 — 두뇌는 백엔드, 에디터는 얇은 클라이언트
+## 두 시점, 한 피드
+
+| 레이어 | 언제 | 어디에 |
+|---|---|---|
+| 🔵 **저장 (라이브)** | 팀원이 `Ctrl+S` 하는 순간 | VS Code 변경 피드 + 알림strip |
+| 🟣 **PR (게이트)** | PR 열림/갱신 | 같은 변경 피드(PR 뱃지) + GitHub PR 코멘트 |
+
+둘 다 **같은 엔진**으로 분석한다.
+
+---
+
+## 엔진은 LLM이 아니라 결정론적 의존 그래프 (측정으로 증명)
+
+"AI가 영향을 읽는다" 의 핵심은 LLM이 아니었다. 실제 3개 repo(autobe·grida·wrtn-fe)에서 측정:
+
+| 엔진 | Precision | Recall |
+|---|---|---|
+| **graph** (결정론·무료) | **78~97%** | **100%** |
+| LLM 단독 (haiku/sonnet) | 64~70% | 54~56% |
+| 파일명 추측(mock) | — | 2~6% |
+
+**유료 LLM이 무료 graph보다 못하다(2모델 독립 확인).** 측정 안 했으면 free 정적분석보다 나쁜 "AI-powered"를 출시할 뻔.
+근거·하네스는 [`scripts/README.md`](scripts/README.md).
+
+---
+
+## 그냥 설치하면 됨 (설정 0)
+
+- **혼자**: 익스텐션 설치 = 끝. 로컬 두뇌 자동 기동.
+- **같은 사무실(LAN)**: 다같이 설치 = 끝. 먼저 켠 사람이 두뇌 host, 나머지는 **자동 발견**(고정 IP 0, host 바뀌어도 자가치유).
+- **같은 repo = 자동으로 같은 팀** (git 원격에서 도출, 다른 프로젝트와 격리).
+- Win·Mac·Linux 단일 `.vsix`. Cursor·Windsurf 동일.
+
+→ 설치/배포: [USAGE.md](USAGE.md) · [DEPLOY.md](DEPLOY.md) · 릴리스/업데이트: [RELEASING.md](RELEASING.md)
+
+---
+
+## 구조
 
 ```
-   ┌─ VS Code 익스텐션 ──┐   ← Cursor · Windsurf 자동 포함 (같은 확장 API)
-   │  · onDidSaveTextDocument 로 저장 감지
-   │  · diff 를 백엔드로 전송
-   │  · "너에게 영향" 알림 + 사이드바 변경 피드
-   └──────────┬──────────┘
-              │  WebSocket
+   ┌─ VS Code 익스텐션 ─┐   ← Cursor·Windsurf 동일. 두뇌 자동기동·LAN 자동발견
+   │  · 저장 diff + 열린 PR 을 두뇌로
+   │  · 변경 피드(어디/어떻게/영향) + 사용처 점프
+   └──────────┬─────────┘
+              │ WebSocket (팀 room 으로 격리)
               ▼
-   ┌──────────────────────────────────┐
-   │      백엔드 (진짜 두뇌)             │
-   │  · 모든 사람의 변경 수집            │
-   │  · AI 가 diff 읽고 영향 분석        │
-   │  · 영향받는 사람에게 라우팅·브로드캐스트 │
-   └──────────────────────────────────┘
+   ┌──────────────────────────────┐
+   │  두뇌 (graph 엔진)            │
+   │  · 의존 엣지로 영향자 판정     │
+   │  · 같은 팀에게만 브로드캐스트  │
+   └──────────────────────────────┘
+   + GitHub Action: PR diff 를 같은 엔진에 → PR 코멘트
 ```
-
-에디터 추가 = 두뇌 다시 짜기가 아니라 **얇은 어댑터 하나 붙이기.** (JetBrains/Zed 는 나중에 어댑터만)
-
----
-
-## 폴더
 
 | 경로 | 내용 |
 |---|---|
-| [`backend/`](backend/) | 두뇌. WebSocket 서버 + AI 영향 분석. provider 교체식 (Claude / mock) |
-| [`extension/`](extension/) | VS Code 익스텐션. 저장 감지 → diff 전송 → 알림 + 피드 |
-| [`demo/`](demo/) | 0단계 Monaco+Yjs 라이브 협업 데모 (라이브 가능성 증명용, 제품엔 미포함) |
+| [`backend/`](backend/) | 두뇌. WS 서버 + graph 엔진. `npx ripple-brain` / Docker |
+| [`extension/`](extension/) | VS Code 익스텐션. 저장+PR 감지 → 피드 |
+| [`scripts/`](scripts/) | 측정 하네스(eval) · PR 영향 게이트(pr-impact) |
 
 ---
 
-## 실행
+## 품질
 
-> 🚀 **실제로 어떻게 쓰는지(설치 → 데모 → VS Code → 팀 배포 → 트러블슈팅)는 [USAGE.md](USAGE.md) 참고.** 아래는 요약.
+- 테스트 72(단위+실서버 통합) · CI · 보안 하드닝(토큰 인증·DoS 캡·비밀 파일 제외·입력 검증)
+- 엔진은 저장/PR 양쪽에서 동일 — 어렵게 만들고 측정한 자산을 재사용.
 
-### 1. 백엔드 두뇌 띄우기
+## 한계 (정직)
 
-```bash
-cd backend
-npm install        # (루트에서 한 번 npm install 했으면 생략)
-npm run dev        # ws://localhost:7077
-
-# AI 분석을 진짜 Claude 로 하려면:
-ANTHROPIC_API_KEY=sk-... npm run dev
-# 키 없으면 휴리스틱 mock 으로 자동 동작 (구조 검증용)
-```
-
-상태 확인: `curl http://localhost:7077/health` → `{"ok":true,"provider":"claude|mock",...}`
-
-### 2. 익스텐션 띄우기
-
-```bash
-cd extension
-npm install        # (루트에서 했으면 생략)
-npm run build
-# VS Code 로 extension/ 폴더 열고 F5 (Run Ripple Extension)
-```
-
-→ 새 VS Code 창이 뜸. 두 사람(또는 두 창)이 각자 다른 repo 를 열고 같은 백엔드(`ripple.backendUrl`)에 붙으면,
-한쪽이 파일 저장 → 다른 쪽에 **"🌊 너에게 영향"** 알림 + 사이드바 피드에 변경이 흐름.
-
-### 설정 (VS Code Settings)
-
-| 키 | 기본값 | 설명 |
-|---|---|---|
-| `ripple.backendUrl` | `ws://localhost:7077` | 백엔드 WebSocket URL |
-| `ripple.userId` | (OS 사용자명) | 팀에서 나를 식별하는 이름 |
-
----
-
-## 동작 검증 (E2E)
-
-`mock` 프로바이더로 "백엔드 저장 → 프론트 알림"이 실제로 도는지 확인됨:
-
-```
-Alice(payment-api) 가 payment.ts 의 export 시그니처 변경 저장
-  → severity: high (계약 변경)
-  → Bob(web)의 payment-client.ts 가 영향 대상으로 잡힘
-  → Bob 에게 impact 푸시  ✅
-```
-
----
-
-## AI 프로바이더 (클코 vs 코덱스 — 교체식)
-
-[`backend/src/providers/provider.ts`](backend/src/providers/provider.ts) 의 `Provider` 인터페이스만 구현하면 분석 엔진을 갈아끼울 수 있음.
-
-- ✅ `ClaudeProvider` — Anthropic Messages API (`claude-sonnet-4-6`, SDK 없이 fetch)
-- ✅ `MockProvider` — 키 없이 도는 휴리스틱 fallback
-- ⬜ `CodexProvider` — 동일 인터페이스로 추가하면 끝
-
----
-
-## 로드맵
-
-| 단계 | 내용 | 상태 |
-|:--:|---|:--:|
-| 0 | Monaco + Yjs 라이브 협업 데모 ("라이브 진짜 됨") | ✅ `demo/` |
-| 1 | 저장 → diff → 영향 분석 → 영향자 알림 (MVP 동작) | ✅ |
-| **2** | **결정론적 의존 그래프 엔진 + 측정 하네스** | ✅ **여기 (실측: R100/P~78, LLM보다 정확)** |
-| 3 | 실제 팀 dogfooding (이제 임계 검증됐으니) | ⬜ |
-| 4 | 어댑터 확장(JetBrains/Zed) · 전사 repo | ⬜ |
-
-> **핵심 발견**: "AI가 코드를 읽어 영향을 알려준다"의 엔진은 LLM이 아니라 **결정론적 의존 그래프**였다.
-> 실측(`scripts/eval.mjs`, autobe 실제 커밋)에서 graph R100/P~78 > LLM 4구성 전부. 자세한 건 [`scripts/README.md`](scripts/README.md).
-
----
-
-## 설계 원칙 (스코프 독)
-
-- ❌ VS Code 바닥부터 → Monaco/익스텐션 위에
-- ❌ 키 입력 실시간 집착 → **파일 저장 단위** (반쯤 쓴 코드는 노이즈)
-- ❌ 처음부터 전 에디터·전사 repo → VS Code 패밀리 + 한 팀 2–3 repo
-- ❌ 채팅 직접 구현 → AI 대화가 그 자리를 대체
-
-> **차별점은 에디터가 아니라 "AI가 코드 변경을 사람 대신 읽고 영향을 알려주는 것." 에디터는 그릇.**
+- precision 78~97%(코드베이스별) — **거의 안 놓치되(recall 100%) 가끔 "import는 하지만 그 심볼은 안 쓰는" 파일을 같이 짚는다.** 알림엔 놓치는 것보다 나은 트레이드.
+- 두뇌는 in-memory + 팀 room broadcast. 한 팀(신뢰 그룹) 규모용. 기본 graph는 코드 외부 전송 0(LLM 모드만 opt-in).
+- 크로스-언어/계약(OpenAPI·스키마) 영향은 아직 — 정적 엣지 위주.
