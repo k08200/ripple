@@ -48,12 +48,15 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
     this.view = view;
     view.webview.options = { enableScripts: true };
     view.webview.html = this.html();
-    // 피드 항목 클릭 → 그 파일(있으면 그 줄로) 열기.
     view.webview.onDidReceiveMessage((m: { type?: string; path?: string; line?: number }) => {
+      // 웹뷰 스크립트가 준비됐다고 알리면 그제서야 history 를 보낸다(race 방지).
+      if (m?.type === "ready") {
+        for (const item of this.history) view.webview.postMessage(item);
+        return;
+      }
+      // 피드 항목 클릭 → 그 파일(있으면 그 줄로) 열기.
       if (m?.type === "open" && m.path) void openByHint(m.path, m.line);
     });
-    // 새 뷰가 열리면 그동안 쌓인 히스토리를 다시 흘려보낸다.
-    for (const item of this.history) view.webview.postMessage(item);
   }
 
   push(item: ImpactMessage, opts: { mine: boolean; hitsMe: boolean; sites?: UseSite[] }): void {
@@ -133,6 +136,8 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
         '<div class="summary">' + esc(m.summary) + '</div>' + deltas + aff + sites;
       list.prepend(div);
     });
+    // 스크립트 준비 완료 → 확장에 history 재전송 요청 (나중에 열어도 과거 항목이 뜬다).
+    vscode.postMessage({ type: 'ready' });
   </script>
 </body></html>`;
   }
