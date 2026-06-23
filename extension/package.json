@@ -66,6 +66,11 @@
           "type": "string",
           "default": "",
           "description": "팀 room (공용 백엔드에서 같은 값끼리만 서로 본다). 비우면 git 원격 주소에서 자동 도출 — 같은 repo 면 자동으로 같은 팀."
+        },
+        "ripple.autoDiscover": {
+          "type": "boolean",
+          "default": true,
+          "description": "backendUrl 을 따로 안 정하면 같은 와이파이(LAN)에서 두뇌를 자동으로 찾아 붙는다. 고정 IP 불필요 — host 가 바뀌어도 따라감. 끄면 로컬만."
         }
       }
     },

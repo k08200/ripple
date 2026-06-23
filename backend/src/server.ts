@@ -6,6 +6,7 @@ import type { KnownFile } from "./providers/provider.js";
 import { impactTouches } from "./match.js";
 import { upsertIndex, removeIndex } from "./index-store.js";
 import { loadHistory, saveHistory, type HistoryEntry } from "./history-store.js";
+import { startResponder } from "./discovery.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
@@ -276,4 +277,6 @@ http.listen(PORT, () => {
   if (provider.name === "mock") {
     console.log("   (ANTHROPIC_API_KEY 없음 → 휴리스틱 mock 사용. 키 넣으면 Claude 분석)");
   }
+  // LAN 자동 발견 응답기 — 같은 와이파이의 익스텐션이 고정 IP 없이 찾아 붙는다.
+  startResponder(PORT, (m) => console.log(`   ${m}`));
 });

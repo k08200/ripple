@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { WebSocket } from "ws";
 import { shouldAutoStart, parsePort } from "./autostart";
 import { normalizeTeam } from "./team";
+import { discoverBrain } from "./discovery";
 import { lineDiff } from "./diff";
 import { FeedViewProvider, openByHint } from "./feedView";
 import type { UseSite } from "./feedView";
@@ -25,6 +26,10 @@ let output: vscode.OutputChannel;
 let feed: FeedViewProvider;
 let status: vscode.StatusBarItem;
 let brainProc: ChildProcess | undefined;
+let extContext: vscode.ExtensionContext;
+const LOCAL_URL = "ws://localhost:7077";
+/** 실제 연결할 주소 — 매 (재)연결마다 재해결(명시 설정 > LAN 발견 > 로컬 자동기동). */
+let activeUrl = LOCAL_URL;
 let connected = false;
 let impactCount = 0;
 let peers: PresenceMessage["peers"] = [];
@@ -110,7 +115,28 @@ function teamId(): string {
 }
 
 function backendUrl(): string {
-  return vscode.workspace.getConfiguration("ripple").get<string>("backendUrl") ?? "ws://localhost:7077";
+  return vscode.workspace.getConfiguration("ripple").get<string>("backendUrl") ?? LOCAL_URL;
+}
+
+/** 연결할 두뇌 주소 결정: 명시 설정(수동) > LAN 자동발견 > 로컬 자동기동. 재연결마다 재실행돼 자가치유. */
+async function resolveBackendUrl(): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration("ripple");
+  const explicit = (cfg.get<string>("backendUrl") ?? "").trim();
+  if (explicit && explicit !== LOCAL_URL) {
+    activeUrl = explicit; // 수동 설정 우선
+    return;
+  }
+  if (cfg.get<boolean>("autoDiscover", true)) {
+    const found = await discoverBrain(1200);
+    if (found) {
+      activeUrl = found;
+      log(`LAN 두뇌 자동 발견: ${found}`);
+      return;
+    }
+  }
+  // 아무도 없으면 내가 로컬 두뇌를 띄운다 (= 먼저 켠 사람이 host, 나가면 다음 사람이 이어받음).
+  activeUrl = LOCAL_URL;
+  await maybeStartBrain(LOCAL_URL);
 }
 
 function isTracked(doc: vscode.TextDocument): boolean {
@@ -134,15 +160,14 @@ function brainAlive(port: number): Promise<boolean> {
   });
 }
 
-/** 로컬 모드면 번들된 두뇌를 자동으로 띄운다 → "설치만 하면 됨". 팀 모드(원격)면 안 띄움. */
-async function maybeStartBrain(context: vscode.ExtensionContext): Promise<void> {
+/** 로컬 모드면 번들된 두뇌를 자동으로 띄운다 → "설치만 하면 됨". 원격이면 안 띄움. */
+async function maybeStartBrain(url: string): Promise<void> {
   const enabled = vscode.workspace.getConfiguration("ripple").get<boolean>("autoStartBrain", true);
-  const url = backendUrl();
   if (!shouldAutoStart(url, enabled)) return;
   const port = parsePort(url);
   if (await brainAlive(port)) return; // 이미 떠 있으면 그대로 사용
 
-  const brainPath = vscode.Uri.joinPath(context.extensionUri, "dist", "brain.js").fsPath;
+  const brainPath = vscode.Uri.joinPath(extContext.extensionUri, "dist", "brain.js").fsPath;
   try {
     // VS Code 의 node 런타임으로 실행 (PATH 의 node 에 의존하지 않음).
     brainProc = spawn(process.execPath, [brainPath], {
@@ -171,9 +196,8 @@ function runDemo(): void {
   }
   const symbol = m[1];
   const moduleBase = (m[2].split("/").pop() ?? m[2]).replace(/\.[^.]+$/, "");
-  const url = backendUrl();
   const secret = vscode.workspace.getConfiguration("ripple").get<string>("secret")?.trim();
-  const ws = new WebSocket(url, secret ? { headers: { authorization: `Bearer ${secret}` } } : undefined);
+  const ws = new WebSocket(activeUrl, secret ? { headers: { authorization: `Bearer ${secret}` } } : undefined);
   const idx = { path: `${moduleBase}.ts`, exports: [symbol], imports: [], refs: [] };
   ws.on("open", () => {
     ws.send(JSON.stringify({ type: "register", userId: "🌊 Ripple 데모", repo: "demo-teammate", files: [idx.path], index: [idx], team: teamId() }));
@@ -188,6 +212,7 @@ function runDemo(): void {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  extContext = context;
   output = vscode.window.createOutputChannel("Ripple");
   feed = new FeedViewProvider();
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -229,8 +254,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
-  await maybeStartBrain(context);
-  connect();
+  connect(); // 내부에서 주소 해결(명시>발견>로컬자동) 후 연결
   log(`Ripple 활성화 · user=${userId()} · repo=${repoName()}`);
 }
 
@@ -299,12 +323,13 @@ function onSave(doc: vscode.TextDocument): void {
   log(`변경 전송: ${rel}`);
 }
 
-function connect(): void {
+async function connect(): Promise<void> {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   socket?.removeAllListeners();
   socket?.close();
 
-  const url = backendUrl();
+  await resolveBackendUrl(); // 매 연결마다 재해결 → host 가 바뀌어도 자가치유
+  const url = activeUrl;
   const secret = vscode.workspace.getConfiguration("ripple").get<string>("secret")?.trim();
   log(`연결 시도: ${url}`);
   const ws = new WebSocket(url, secret ? { headers: { authorization: `Bearer ${secret}` } } : undefined);
