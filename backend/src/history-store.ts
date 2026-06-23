@@ -8,7 +8,17 @@ export function loadHistory(path: string, max: number): ImpactMessage[] {
   try {
     const data = JSON.parse(readFileSync(path, "utf8"));
     if (!Array.isArray(data)) return [];
-    return data.filter((m) => m && m.type === "impact").slice(-max);
+    return data
+      .filter(
+        (m) =>
+          m &&
+          m.type === "impact" &&
+          typeof m.id === "string" &&
+          typeof m.author === "string" &&
+          typeof m.ts === "number" &&
+          Array.isArray(m.affected),
+      )
+      .slice(-max);
   } catch {
     return [];
   }

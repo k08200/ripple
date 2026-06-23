@@ -215,11 +215,15 @@ function connect(): void {
     reconnectDelay = 1000;
     connected = true;
     updateStatus();
-    await ensureIndexed(); // 최초 1회만 스캔, 재연결 시 재사용
-    const { files, index } = registerPayload();
-    const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index };
-    send(reg);
-    log(`연결됨 · ${files.length}개 파일 등록 (인덱스 재사용)`);
+    try {
+      await ensureIndexed(); // 최초 1회만 스캔, 재연결 시 재사용
+      const { files, index } = registerPayload();
+      const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index };
+      send(reg);
+      log(`연결됨 · ${files.length}개 파일 등록 (인덱스 재사용)`);
+    } catch (err) {
+      log(`등록 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
   });
 
   ws.on("message", (data) => {
@@ -266,13 +270,13 @@ function handleImpact(msg: ImpactMessage): void {
   const hitsMe = Boolean(matched);
   feed.push(msg, { mine, hitsMe });
 
+  // 접속 시 백필된 과거 변경은 피드에만 채우고 팝업·카운트는 건드리지 않는다 (노이즈 방지).
+  if (msg.replay) return;
+
   if (hitsMe && !mine) {
     impactCount += 1;
     updateStatus();
   }
-
-  // 접속 시 백필된 과거 변경은 피드에만 채우고 팝업은 띄우지 않는다 (노이즈 방지).
-  if (msg.replay) return;
   if (!hitsMe) return;
   const reason = msg.affected.find((a) => matchMine(a.pathHint) === matched)?.reason ?? "";
   const text = `🌊 ${msg.author} · ${msg.repo}/${msg.file} → 너의 ${matched} 영향: ${reason}`;

@@ -11,6 +11,8 @@ import { GraphProvider } from "./graph.js";
 // - graph severity == "info": graph 가 "영향 없음" 확신. 그대로 (노이즈 억제).
 // severity 는 항상 graph 것 유지 (graph 가 LLM 보다 정확: 79% vs 50~71%, overshoot 차단).
 
+const MAX_AFFECTED = 50;
+
 function norm(p: string): string {
   return p.toLowerCase().replace(/\.[^./]+$/, "").trim();
 }
@@ -50,6 +52,10 @@ export class HybridProvider implements Provider {
       }
     }
 
-    return { summary: graphResult.summary, severity: graphResult.severity, affected: merged };
+    return {
+      summary: graphResult.summary,
+      severity: graphResult.severity,
+      affected: merged.slice(0, MAX_AFFECTED),
+    };
   }
 }

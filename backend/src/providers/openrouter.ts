@@ -43,6 +43,7 @@ export class OpenRouterProvider implements Provider {
           "x-title": "Ripple",
         },
         body,
+        signal: AbortSignal.timeout(30_000), // 멈춘 업스트림이 분석 파이프라인을 영영 막지 않게
       });
 
       if (res.status === 429 && attempt < MAX_RETRY) {

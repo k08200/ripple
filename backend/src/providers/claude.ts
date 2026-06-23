@@ -35,6 +35,7 @@ export class ClaudeProvider implements Provider {
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: buildUserPrompt(input) }],
       }),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {

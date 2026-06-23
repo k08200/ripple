@@ -11,6 +11,11 @@ import { analyze, selectProvider } from "./analyzer.js";
 const PORT = Number(process.env.PORT ?? 7077);
 const provider = selectProvider();
 
+// 어떤 비동기 경로에서 새는 예외도 프로세스를 죽이지 않게.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason instanceof Error ? reason.message : String(reason));
+});
+
 interface Client {
   userId: string;
   repo: string;
@@ -54,14 +59,28 @@ function broadcast(msg: ImpactMessage): void {
   }
 }
 
+const isStr = (v: unknown): v is string => typeof v === "string";
+
+/** 외부 입력 검증 — 필수 필드까지 확인해야 핸들러에서 undefined 가 안 샌다. */
 function parse(raw: string): ClientMessage | null {
+  let obj: Record<string, unknown>;
   try {
-    const obj = JSON.parse(raw) as ClientMessage;
-    if (obj && (obj.type === "register" || obj.type === "change" || obj.type === "index")) return obj;
-    return null;
+    obj = JSON.parse(raw) as Record<string, unknown>;
   } catch {
     return null;
   }
+  if (!obj || typeof obj !== "object") return null;
+
+  if (obj.type === "register" && isStr(obj.userId) && isStr(obj.repo) && Array.isArray(obj.files)) {
+    return obj as unknown as ClientMessage;
+  }
+  if (obj.type === "change" && isStr(obj.userId) && isStr(obj.repo) && isStr(obj.file) && isStr(obj.diff)) {
+    return obj as unknown as ClientMessage;
+  }
+  if (obj.type === "index" && isStr(obj.repo) && isStr(obj.path) && (obj.op === "upsert" || obj.op === "remove")) {
+    return obj as unknown as ClientMessage;
+  }
+  return null;
 }
 
 async function handleChange(
@@ -151,7 +170,7 @@ wss.on("connection", (ws) => {
       const c = clients.get(ws);
       if (c) {
         c.files.add(msg.file);
-        if (msg.index) {
+        if (msg.index && typeof msg.index === "object") {
           c.index = upsertIndex(c.index, {
             path: `${msg.repo}/${msg.file}`,
             exports: msg.index.exports ?? [],
@@ -160,7 +179,9 @@ wss.on("connection", (ws) => {
           });
         }
       }
-      void handleChange(msg);
+      handleChange(msg).catch((err) =>
+        console.error("[change] 처리 실패:", err instanceof Error ? err.message : String(err)),
+      );
     }
 
     if (msg.type === "index") {
