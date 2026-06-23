@@ -3,7 +3,7 @@ import * as http from "node:http";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import * as vscode from "vscode";
 import { WebSocket } from "ws";
-import { shouldAutoStart, parsePort } from "./autostart";
+import { shouldAutoStart, parsePort, electionDelayMs } from "./autostart";
 import { normalizeTeam } from "./team";
 import { discoverBrain } from "./discovery";
 import { lineDiff } from "./diff";
@@ -18,6 +18,8 @@ const IGNORE_GLOB = "**/{node_modules,.git,dist,build,out,.next,vendor}/**";
 const MAX_FILES = 3000;
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 10_000;
+/** 선출 대기 후 그새 뜬 host 를 잡기 위한 재발견 창(ms). */
+const DISCOVERY_RETRY_MS = 1200;
 
 let socket: WebSocket | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -31,6 +33,8 @@ const LOCAL_URL = "ws://localhost:7077";
 /** 실제 연결할 주소 — 매 (재)연결마다 재해결(명시 설정 > LAN 발견 > 로컬 자동기동). */
 let activeUrl = LOCAL_URL;
 let connected = false;
+/** 이번 세션에서 한 번이라도 붙은 적이 있나 — host 선출(재연결 시에만)과 콜드 스타트를 가른다. */
+let everConnected = false;
 let impactCount = 0;
 let peers: PresenceMessage["peers"] = [];
 
@@ -118,6 +122,9 @@ function backendUrl(): string {
   return vscode.workspace.getConfiguration("ripple").get<string>("backendUrl") ?? LOCAL_URL;
 }
 
+/** ms 만큼 쉰다 (선출 대기·기동 대기 공용). */
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
 /** 연결할 두뇌 주소 결정: 명시 설정(수동) > LAN 자동발견 > 로컬 자동기동. 재연결마다 재실행돼 자가치유. */
 async function resolveBackendUrl(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("ripple");
@@ -133,8 +140,21 @@ async function resolveBackendUrl(): Promise<void> {
       log(`LAN 두뇌 자동 발견: ${found}`);
       return;
     }
+    // host 가 사라진 재연결이면, 모두가 동시에 발견 실패 → 각자 두뇌 기동 = split-brain.
+    // 무작위 시간만큼 기다렸다 한 번 더 발견: 가장 짧게 뽑은 한 명만 host 가 되고
+    // 나머지는 그새 뜬 host 에 붙는다(단일 host 로 수렴). 콜드 솔로 스타트(everConnected=false)는
+    // 어차피 혼자라 선출이 무의미 → 생략해 온보딩 지연 0.
+    if (everConnected && cfg.get<boolean>("autoStartBrain", true)) {
+      await delay(electionDelayMs());
+      const elected = await discoverBrain(DISCOVERY_RETRY_MS);
+      if (elected) {
+        activeUrl = elected;
+        log(`LAN 두뇌 발견(host 선출 재시도): ${elected}`);
+        return;
+      }
+    }
   }
-  // 아무도 없으면 내가 로컬 두뇌를 띄운다 (= 먼저 켠 사람이 host, 나가면 다음 사람이 이어받음).
+  // 아무도 없으면 내가 로컬 두뇌를 띄운다 (= 먼저 켠/가장 짧게 뽑은 사람이 host, 나가면 다음 사람이 이어받음).
   activeUrl = LOCAL_URL;
   await maybeStartBrain(LOCAL_URL);
 }
@@ -179,7 +199,7 @@ async function maybeStartBrain(url: string): Promise<void> {
     if (process.platform === "win32") {
       log("Windows 방화벽이 네트워크 접근을 물으면 '허용' 하세요 (팀 연결에 필요).");
     }
-    await new Promise((r) => setTimeout(r, 600)); // 기동 잠깐 대기 (이후 connect 재시도가 마저 처리)
+    await delay(600); // 기동 잠깐 대기 (이후 connect 재시도가 마저 처리)
   } catch (e) {
     log(`두뇌 spawn 오류: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -341,6 +361,7 @@ async function connect(): Promise<void> {
   ws.on("open", async () => {
     reconnectDelay = RECONNECT_BASE_MS;
     connected = true;
+    everConnected = true;
     updateStatus();
     try {
       await ensureIndexed(); // 최초 1회만 스캔, 재연결 시 재사용
