@@ -60,4 +60,9 @@ LSP의 Find References와 다른 점: **네가 모르는 변경**을, **다른 r
 `.env`·`.pem`·`.key`·secret/credential 류 파일은 분석·전송에서 자동 제외된다.
 기본 `graph` 엔진은 코드를 외부로 보내지 않는다(전부 로컬 결정론). LLM 모드는 명시적 opt-in.
 
-Cursor · Windsurf 에서도 동일 확장 API로 그대로 동작. MIT License.
+## 플랫폼
+
+Windows · macOS · Linux 모두 동작(네이티브 모듈 없음, 단일 `.vsix`). Cursor · Windsurf 도 동일 확장 API.
+Windows 첫 실행 시 방화벽이 네트워크 접근을 물으면 **허용**(팀 연결에 필요).
+
+MIT License.

@@ -1,3 +1,5 @@
+> 업데이트/릴리스(Win+Mac, 자동 업데이트)는 [RELEASING.md](RELEASING.md) 참고.
+
 # Ripple 배포
 
 두 조각을 배포한다: **① 백엔드 두뇌**(팀이 닿는 호스트) + **② VS Code 익스텐션**(각 개발자).

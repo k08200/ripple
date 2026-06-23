@@ -176,6 +176,9 @@ async function maybeStartBrain(url: string): Promise<void> {
     });
     brainProc.on("error", (e) => log(`두뇌 자동기동 실패: ${e.message}`));
     log(`로컬 두뇌 자동 기동 (포트 ${port})`);
+    if (process.platform === "win32") {
+      log("Windows 방화벽이 네트워크 접근을 물으면 '허용' 하세요 (팀 연결에 필요).");
+    }
     await new Promise((r) => setTimeout(r, 600)); // 기동 잠깐 대기 (이후 connect 재시도가 마저 처리)
   } catch (e) {
     log(`두뇌 spawn 오류: ${e instanceof Error ? e.message : String(e)}`);
