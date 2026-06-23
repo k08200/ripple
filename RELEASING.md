@@ -34,8 +34,9 @@
 
 ### 매 업데이트 (반복)
 ```bash
-# 1) 버전 올리기 (extension/package.json 의 version)
-npm version --prefix extension patch   # 0.1.0 → 0.1.1  (minor/major 도 가능)
+# 1) 버전만 올리기 (extension/package.json 의 version)
+#    --no-git-tag-version: npm 이 멋대로 커밋·태그 만들지 않게(아래서 직접 함). 없으면 2·3번과 충돌.
+npm version --prefix extension patch --no-git-tag-version   # 0.1.0 → 0.1.1  (minor/major 도 가능)
 git add extension/package.json && git commit -m "release: v0.1.1"
 
 # 2) 태그 밀기 → CI(.github/workflows/release.yml)가 전부 자동
