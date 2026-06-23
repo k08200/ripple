@@ -140,6 +140,36 @@ async function maybeStartBrain(context: vscode.ExtensionContext): Promise<void> 
   }
 }
 
+/** 솔로 온보딩: 가상 동료가 '내 열린 파일이 쓰는 심볼'을 바꾼 것처럼 시뮬레이트 → 풀 기능을 혼자 본다. */
+function runDemo(): void {
+  const doc = vscode.window.activeTextEditor?.document;
+  if (!doc) {
+    void vscode.window.showInformationMessage("🌊 Ripple 데모: 코드 파일을 하나 열고 다시 실행하세요.");
+    return;
+  }
+  const m = doc.getText().match(/import\s*\{\s*([A-Za-z_$][\w$]*)[^}]*\}\s*from\s*['"]([^'"]+)['"]/);
+  if (!m) {
+    void vscode.window.showInformationMessage("🌊 Ripple 데모: 이 파일에 named import 가 없어요. import 가 있는 파일에서 실행하세요.");
+    return;
+  }
+  const symbol = m[1];
+  const moduleBase = (m[2].split("/").pop() ?? m[2]).replace(/\.[^.]+$/, "");
+  const url = backendUrl();
+  const secret = vscode.workspace.getConfiguration("ripple").get<string>("secret")?.trim();
+  const ws = new WebSocket(url, secret ? { headers: { authorization: `Bearer ${secret}` } } : undefined);
+  const idx = { path: `${moduleBase}.ts`, exports: [symbol], imports: [], refs: [] };
+  ws.on("open", () => {
+    ws.send(JSON.stringify({ type: "register", userId: "🌊 Ripple 데모", repo: "demo-teammate", files: [idx.path], index: [idx] }));
+    setTimeout(() => {
+      const diff = `@@\n-export function ${symbol}(value: number): void\n+export function ${symbol}(value: number, currency: string): Result`;
+      ws.send(JSON.stringify({ type: "change", userId: "🌊 Ripple 데모", repo: "demo-teammate", file: `${moduleBase}.ts`, diff, index: idx }));
+      setTimeout(() => ws.close(), 1000);
+    }, 300);
+  });
+  ws.on("error", (e) => void vscode.window.showWarningMessage(`🌊 Ripple 데모: 두뇌 연결 실패 (${e.message}).`));
+  void vscode.window.showInformationMessage(`🌊 Ripple 데모: 가상 동료가 '${symbol}()' 시그니처를 바꿉니다 — 알림/변경 피드를 보세요.`);
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   output = vscode.window.createOutputChannel("Ripple");
   feed = new FeedViewProvider();
@@ -170,6 +200,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log("수동 재연결");
       connect();
     }),
+    vscode.commands.registerCommand("ripple.demo", runDemo),
     vscode.commands.registerCommand("ripple.reindex", async () => {
       indexed = false;
       indexMap.clear();

@@ -66,6 +66,10 @@
     },
     "commands": [
       {
+        "command": "ripple.demo",
+        "title": "Ripple: 데모 — 가상 동료 변경 시뮬레이트"
+      },
+      {
         "command": "ripple.reconnect",
         "title": "Ripple: 백엔드 재연결"
       },
