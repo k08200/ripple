@@ -55,6 +55,7 @@ function client(userId, repo, index, team) {
     inbox,
     ready,
     save: (file, diff, idx) => ws.send(JSON.stringify({ type: "change", userId, repo, file, diff, index: idx })),
+    savePr: (file, diff, idx, pr) => ws.send(JSON.stringify({ type: "change", userId, repo, file, diff, index: idx, source: "pr", pr })),
     close: () => ws.close(),
   };
 }
@@ -103,6 +104,34 @@ test("늦게 접속한 클라가 놓친 영향을 replay 로 백필받는다", a
   assert.ok(replay.affected.some((a) => a.pathHint.includes("client.ts")));
   carol.close();
   dave.close();
+  await sleep(100);
+});
+
+test("PR 출처: 영향이 source=pr + pr 메타로 오고, 같은 PR head 는 한 번만 분석된다", async () => {
+  const alice = client("alice", "api", [payIdx]);
+  const bob = client("bob", "web", [clientIdx]);
+  await Promise.all([alice.ready, bob.ready]);
+  await sleep(150);
+
+  const pr = { number: 42, url: "https://github.com/x/y/pull/42", title: "sig change", head: "abc123" };
+  alice.savePr("src/pay.ts", SIG_DIFF, payIdx, pr);
+  await sleep(500);
+
+  const prImpacts = bob.inbox.filter((m) => m.type === "impact" && m.source === "pr");
+  assert.equal(prImpacts.length, 1, "PR impact 가 정확히 1건이어야 함");
+  assert.equal(prImpacts[0].pr.number, 42, "pr 메타 전달 안 됨");
+  assert.ok(prImpacts[0].affected.some((a) => a.pathHint.includes("client.ts")));
+
+  // 같은 PR(같은 head)·같은 파일 재전송 → 중복 분석 안 함 (여러 명 폴링 대비)
+  alice.savePr("src/pay.ts", SIG_DIFF, payIdx, pr);
+  await sleep(500);
+  assert.equal(
+    bob.inbox.filter((m) => m.type === "impact" && m.source === "pr").length,
+    1,
+    "같은 PR head 가 중복 분석됨(dedup 실패)",
+  );
+  alice.close();
+  bob.close();
   await sleep(100);
 });
 
