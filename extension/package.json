@@ -23,24 +23,13 @@
           "type": "string",
           "default": "",
           "description": "팀에서 나를 식별하는 이름 (비우면 OS 사용자명)"
-        },
-        "ripple.previewUrl": {
-          "type": "string",
-          "default": "http://localhost:5173",
-          "description": "Live Preview 패널이 띄울 실제 프론트 앱 URL (dev 서버 또는 배포 미리보기)"
         }
       }
     },
     "commands": [
       { "command": "ripple.reconnect", "title": "Ripple: 백엔드 재연결" },
-      { "command": "ripple.showFeed", "title": "Ripple: 변경 피드 열기" },
-      { "command": "ripple.openPreview", "title": "Ripple: Live Preview 열기", "icon": "$(preview)" }
+      { "command": "ripple.showFeed", "title": "Ripple: 변경 피드 열기" }
     ],
-    "menus": {
-      "view/title": [
-        { "command": "ripple.openPreview", "when": "view == ripple.feed", "group": "navigation" }
-      ]
-    },
     "viewsContainers": {
       "activitybar": [
         { "id": "ripple", "title": "Ripple", "icon": "media/ripple.svg" }

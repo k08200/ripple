@@ -3,7 +3,6 @@ import * as vscode from "vscode";
 import { WebSocket } from "ws";
 import { lineDiff } from "./diff";
 import { FeedViewProvider } from "./feedView";
-import { PreviewPanel } from "./previewPanel";
 import { extractIndex } from "./indexer";
 import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, RegisterMessage } from "./protocol";
 
@@ -53,10 +52,6 @@ function backendUrl(): string {
   return vscode.workspace.getConfiguration("ripple").get<string>("backendUrl") ?? "ws://localhost:7077";
 }
 
-function previewUrl(): string {
-  return vscode.workspace.getConfiguration("ripple").get<string>("previewUrl") ?? "http://localhost:5173";
-}
-
 function isTracked(doc: vscode.TextDocument): boolean {
   if (doc.uri.scheme !== "file" || doc.isUntitled) return false;
   const rel = vscode.workspace.asRelativePath(doc.uri, false);
@@ -92,10 +87,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("ripple.reconnect", () => {
       log("수동 재연결");
       connect();
-    }),
-    vscode.commands.registerCommand("ripple.openPreview", () => {
-      PreviewPanel.createOrShow(previewUrl());
-      log(`Live Preview 열기: ${previewUrl()}`);
     }),
   );
 
@@ -249,7 +240,6 @@ function handleImpact(msg: ImpactMessage): void {
   }
   const hitsMe = Boolean(matched);
   feed.push(msg, { mine, hitsMe });
-  PreviewPanel.current?.push(msg, { mine, hitsMe });
 
   if (hitsMe && !mine) {
     impactCount += 1;
