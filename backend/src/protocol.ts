@@ -71,6 +71,8 @@ export interface ImpactMessage {
   summary: string;
   severity: Severity;
   affected: AffectedHint[];
+  /** 실제로 바뀐 심볼/라우트. 수신자가 자기 파일의 사용 위치를 찾는 데 쓴다. */
+  changedSymbols: string[];
   /** epoch millis. */
   ts: number;
   /** 접속 시 백필된 과거 변경이면 true — 클라는 알림 팝업 없이 피드에만 채운다. */

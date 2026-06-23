@@ -133,6 +133,7 @@ async function handleChange(
     summary: result.summary,
     severity: result.severity,
     affected: result.affected,
+    changedSymbols: result.changedSymbols,
     ts: Date.now(),
   };
 

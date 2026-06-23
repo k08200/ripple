@@ -135,6 +135,6 @@ export class GraphProvider implements Provider {
             : "내부 변경";
     const summary = `${input.file} ${verb} · ${what} (영향 ${affected.length}건)`;
 
-    return { summary, severity, affected };
+    return { summary, severity, affected, changedSymbols: [...changedKeys] };
   }
 }

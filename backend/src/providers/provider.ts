@@ -23,6 +23,9 @@ export interface AnalyzeResult {
   summary: string;
   severity: Severity;
   affected: AffectedHint[];
+  /** 이 변경에서 실제로 바뀐 심볼/라우트(예: ["charge","/v2/login"]).
+   *  수신자 쪽에서 자기 파일의 '사용 위치'를 찾는 데 쓴다. */
+  changedSymbols: string[];
 }
 
 /** AI 영향 분석 백엔드 추상화. 클코/코덱스/목 등으로 교체 가능. */

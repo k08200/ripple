@@ -50,6 +50,7 @@ export interface ImpactMessage {
   summary: string;
   severity: Severity;
   affected: AffectedHint[];
+  changedSymbols: string[];
   ts: number;
   replay?: boolean;
 }

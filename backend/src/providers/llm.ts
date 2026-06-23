@@ -81,5 +81,6 @@ export function coerceResult(parsed: unknown): AnalyzeResult {
     summary: String(obj.summary ?? "변경 분석됨").slice(0, 500),
     severity,
     affected,
+    changedSymbols: [],
   };
 }

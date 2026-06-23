@@ -20,6 +20,16 @@ test("export 시그니처 변경(+/- 양쪽 같은 심볼) → high", async () =
   assert.ok(r.affected.some((a) => a.pathHint === "web/client.ts"));
 });
 
+test("changedSymbols: 바뀐 심볼을 표면화한다 (수신자가 사용처 찾을 용도)", async () => {
+  const r = await run({
+    repo: "api",
+    file: "src/pay.ts",
+    diff: "@@\n-export function charge(a: number): void\n+export function charge(a: number, b: string): Receipt",
+    knownIndex: [idx("web/client.ts", [], ["./pay"], ["charge"])],
+  });
+  assert.ok(r.changedSymbols.includes("charge"), "changedSymbols 에 charge 없음");
+});
+
 test("추가만 된 export(additive) → low", async () => {
   const r = await run({
     repo: "api",

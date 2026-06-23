@@ -57,6 +57,6 @@ export class MockProvider implements Provider {
       `${input.file} ${verb} (+${added.length}/-${removed.length})` +
       (severity === "high" ? " · 계약 변경 가능성" : "");
 
-    return { summary, severity, affected };
+    return { summary, severity, affected, changedSymbols: [] };
   }
 }
