@@ -3,7 +3,9 @@ import * as vscode from "vscode";
 import { WebSocket } from "ws";
 import { lineDiff } from "./diff";
 import { FeedViewProvider, openByHint } from "./feedView";
+import type { UseSite } from "./feedView";
 import { extractIndex } from "./indexer";
+import { locateUseSites } from "./usesite";
 import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, PresenceMessage, RegisterMessage, ServerMessage } from "./protocol";
 
 const CODE_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,cs,kt,swift,rs,vue,svelte,sql,proto}";
@@ -234,7 +236,7 @@ function connect(): void {
   ws.on("message", (data) => {
     try {
       const msg = JSON.parse(data.toString()) as ServerMessage;
-      if (msg.type === "impact") handleImpact(msg);
+      if (msg.type === "impact") void handleImpact(msg);
       else if (msg.type === "presence") {
         peers = Array.isArray(msg.peers) ? msg.peers : [];
         updateStatus();
@@ -268,7 +270,22 @@ function matchMine(hint: string): string | undefined {
   return undefined;
 }
 
-function handleImpact(msg: ImpactMessage): void {
+/** 영향받은 내 파일에서 바뀐 심볼이 실제로 쓰인 위치(file:line + 코드)를 찾는다. */
+async function findUseSites(fullPath: string, symbols: string[]): Promise<UseSite[]> {
+  const repo = repoName();
+  const rel = fullPath.startsWith(`${repo}/`) ? fullPath.slice(repo.length + 1) : fullPath;
+  if (/\.\.|[*?{}[\]]/.test(rel)) return [];
+  const uris = await vscode.workspace.findFiles(rel, IGNORE_GLOB, 1);
+  if (uris.length === 0) return [];
+  try {
+    const lines = Buffer.from(await vscode.workspace.fs.readFile(uris[0])).toString("utf8").split("\n");
+    return locateUseSites(lines, symbols).map((s) => ({ rel, line: s.line, text: s.text }));
+  } catch {
+    return []; // 읽기 실패 무시
+  }
+}
+
+async function handleImpact(msg: ImpactMessage): Promise<void> {
   const mine = msg.author === userId();
   let matched: string | undefined;
   if (!mine) {
@@ -278,7 +295,9 @@ function handleImpact(msg: ImpactMessage): void {
     }
   }
   const hitsMe = Boolean(matched);
-  feed.push(msg, { mine, hitsMe });
+  // 내게 영향이면, 내 코드의 실제 사용 위치를 찾아 함께 보여준다 (어디서 어떻게 깨지나).
+  const sites = hitsMe && matched ? await findUseSites(matched, msg.changedSymbols ?? []) : [];
+  feed.push(msg, { mine, hitsMe, sites });
 
   // 접속 시 백필된 과거 변경은 피드에만 채우고 팝업·카운트는 건드리지 않는다 (노이즈 방지).
   if (msg.replay) return;
@@ -290,11 +309,12 @@ function handleImpact(msg: ImpactMessage): void {
   if (!hitsMe) return;
   const reason = msg.affected.find((a) => matchMine(a.pathHint) === matched)?.reason ?? "";
   const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + "…" : s);
+  const at = sites[0] ? ` @ ${sites[0].rel.split("/").pop()}:${sites[0].line}` : "";
   // 서버발(發) 문자열은 길이 제한 — 과대 알림/스팸 방지.
-  const text = `🌊 ${cut(msg.author, 40)} · ${cut(msg.repo, 30)}/${cut(msg.file, 80)} → 너의 ${cut(matched ?? "", 80)} 영향: ${cut(reason, 120)}`;
-  // 팝업에서 바로 영향받은 내 파일로 점프할 수 있게 "열기" 액션 제공.
+  const text = `🌊 ${cut(msg.author, 40)} · ${cut(msg.repo, 30)}/${cut(msg.file, 80)} → 너의 ${cut(matched ?? "", 80)} 영향${at}: ${cut(reason, 120)}`;
+  // 팝업의 "열기" → 사용처 줄이 있으면 그 줄로, 없으면 파일로.
   const show = msg.severity === "high" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
   void show(text, "열기").then((pick) => {
-    if (pick === "열기" && matched) void openByHint(matched);
+    if (pick === "열기" && matched) void openByHint(sites[0]?.rel ?? matched, sites[0]?.line);
   });
 }
