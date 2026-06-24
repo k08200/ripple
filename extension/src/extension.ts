@@ -373,6 +373,14 @@ async function sendIndexOp(op: "upsert" | "remove", uri: vscode.Uri): Promise<vo
   if (/(^|\/)(node_modules|\.git|dist|build|out|\.next|vendor)\//.test(rel)) return;
   const repo = repoName();
   if (op === "remove") {
+    // 원자적 rename 은 target 을 잠깐 지웠다 다시 만드는 것처럼 보일 수 있다 — 파일이 아직
+    // 있으면 진짜 삭제가 아니므로 기준선을 날리지 않는다(곧 오는 create/change 가 처리).
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return;
+    } catch {
+      /* 정말 없음 → 삭제 진행 */
+    }
     delEntry(rel);
     snapshots.delete(uri.fsPath);
     send({ type: "index", repo, op: "remove", path: rel });
@@ -390,13 +398,15 @@ async function sendIndexOp(op: "upsert" | "remove", uri: vscode.Uri): Promise<vo
   }
 }
 
-/** 코드 파일 생성/삭제/편집 감시. 편집(onDidChange)은 에디터 저장이 아닌 디스크 변경
- *  — Claude Code·git·외부 도구의 수정까지 잡는다. 에디터 저장은 onSave 가 먼저 처리. */
+/** 코드 파일 생성/삭제/편집 감시 — Claude Code·git·외부 도구의 수정까지 잡는다.
+ *  핵심: Claude Code 등은 "원자적 저장"(임시파일 쓰고 rename 으로 교체)을 한다. 그러면
+ *  기존 파일 편집인데도 inode 가 바뀌어 VS Code 가 onDidChange 가 아니라 onDidCreate 로
+ *  보고한다 → create 도 diff 경로(onDiskChange)로 보내야 변경이 잡힌다. */
 function createFileWatcher(): vscode.Disposable {
   const w = vscode.workspace.createFileSystemWatcher(CODE_GLOB);
   return vscode.Disposable.from(
     w,
-    w.onDidCreate((uri) => void sendIndexOp("upsert", uri)),
+    w.onDidCreate((uri) => void onDiskChange(uri)),
     w.onDidDelete((uri) => void sendIndexOp("remove", uri)),
     w.onDidChange((uri) => void onDiskChange(uri)),
   );
@@ -404,12 +414,19 @@ function createFileWatcher(): vscode.Disposable {
 
 /** 파일 현재 내용을 기준선과 비교해 변경이면 두뇌로 전송. 에디터 저장/디스크 변경 공용. */
 function sendChange(fsPath: string, rel: string, after: string): void {
+  const known = snapshots.has(fsPath); // 기준선이 있으면 기존 파일의 편집
   const before = snapshots.get(fsPath) ?? after;
   const diff = lineDiff(before, after);
   snapshots.set(fsPath, after); // 기준선 갱신 — 다음 비교의 출발점(중복 전송도 방지)
-  if (!diff) return; // 기준선과 동일 → 보낼 게 없음
+  // 인덱스는 항상 최신화 (신규 파일이든 기존 편집이든 분석 후보로 유지).
   const index = extractIndex(rel, after);
   setEntry(rel, index);
+  if (!known) {
+    // 처음 보는 파일 → 비교할 before 가 없으니 인덱스 upsert 만 알린다.
+    send({ type: "index", repo: repoName(), op: "upsert", path: rel, index });
+    return;
+  }
+  if (!diff) return; // 기준선과 동일 → 보낼 변경 없음
   send({ type: "change", userId: userId(), repo: repoName(), file: rel, diff, index });
   log(`변경 전송: ${rel}`);
 }
