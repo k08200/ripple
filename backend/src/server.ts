@@ -76,6 +76,14 @@ function broadcast(msg: ImpactMessage, team: string): void {
   }
 }
 
+/** 작성자 본인(같은 userId)의 접속에만 보낸다 — 저장·커밋은 아직 공유 전이라 self-only. */
+function sendToAuthor(msg: ImpactMessage, team: string, authorUserId: string): void {
+  const payload = JSON.stringify(msg);
+  for (const [ws, c] of clients) {
+    if (c.team === team && c.userId === authorUserId && ws.readyState === WebSocket.OPEN) ws.send(payload);
+  }
+}
+
 /** 같은 team 접속자 목록을 그 team 에게 — userId+repo 중복 제거. */
 function broadcastPresence(team: string): void {
   const seen = new Set<string>();
@@ -167,15 +175,21 @@ async function handleChange(
     ts: Date.now(),
   };
 
-  history.push({ team, impact });
-  if (history.length > HISTORY_MAX) history.shift();
-  persistHistory();
-
+  // 청중 라우팅: 저장·커밋은 아직 로컬이라 작성자 본인에게만(self-check), 푸시·PR 은 공유돼
+  // 팀 전체에. 공유된 것만 히스토리에 남겨 늦게 온 팀원에게 백필한다 (로컬 저장은 백필 무의미).
+  const shared = impact.source === "push" || impact.source === "pr";
   console.log(
-    `[change:${impact.source}] ${msg.userId} ${msg.repo}/${msg.file} ` +
+    `[change:${impact.source}${shared ? "" : "·self"}] ${msg.userId} ${msg.repo}/${msg.file} ` +
       `→ ${impact.severity} · 영향 ${impact.affected.length}건 (${usedProvider}) [team ${team}]`,
   );
-  broadcast(impact, team);
+  if (shared) {
+    history.push({ team, impact });
+    if (history.length > HISTORY_MAX) history.shift();
+    persistHistory();
+    broadcast(impact, team);
+  } else {
+    sendToAuthor(impact, team, msg.userId);
+  }
 }
 
 const http = createServer((req, res) => {
