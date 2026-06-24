@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.5
+
+변경 출처를 피드 뱃지로 구분 — **저장 / 커밋 / 푸시 / PR**.
+
+- **커밋 감지**: `.git/logs/HEAD` reflog 감시 → 로컬 커밋이면 그 커밋의 영향을 분석(초록 뱃지).
+  체크아웃·리셋·머지는 제외(reflog 액션이 `commit` 인 것만).
+- **푸시 감지**: 원격 추적 ref reflog 의 `update by push` 액션으로 푸시를 잡아(주황 뱃지)
+  fetch/pull 과 구분. 같은 sha 는 한 번만 분석(dedup).
+- 커밋/푸시/PR 은 피드에만(조용히) — 능동 팝업은 라이브 저장만.
+- 프로토콜에 `ChangeSource`(save/commit/push/pr)·`CommitRef` 추가. 통합 테스트로 고정.
+
+## 0.2.4
+
+Claude Code·외부 도구의 **원자적 저장**(임시파일+rename)도 변경 감지.
+
+- 원자적 저장은 inode 가 바뀌어 VS Code 가 onDidChange 가 아니라 onDidCreate 로 보고한다 →
+  기존엔 인덱스만 갱신하고 변경을 안 보냈다(편집해도 0건). create 도 diff 경로로 보내 해결.
+- 삭제 핸들러에 stat 가드(원자적 rename 의 '가짜 삭제'로 기준선 안 날리게).
+
 ## 0.2.3
 
 큰 모노레포가 **연결은 되는데 영원히 먹통**이던 치명 버그 수정.

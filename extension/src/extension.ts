@@ -12,7 +12,7 @@ import type { UseSite } from "./feedView";
 import { extractIndex } from "./indexer";
 import { locateUseSites } from "./usesite";
 import { fetchOpenPrChanges } from "./pr-watch";
-import type { ChangeMessage, FileIndex, ImpactMessage, IndexMessage, PresenceMessage, RegisterMessage, ServerMessage } from "./protocol";
+import type { ChangeMessage, CommitRef, FileIndex, ImpactMessage, IndexMessage, PresenceMessage, RegisterMessage, ServerMessage } from "./protocol";
 
 const CODE_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,rb,php,cs,kt,swift,rs,vue,svelte,sql,proto}";
 const CODE_RE = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|java|rb|php|cs|kt|swift|rs|vue|svelte|sql|proto)$/;
@@ -239,10 +239,12 @@ async function maybeStartBrain(url: string): Promise<void> {
     // VS Code 의 node 런타임으로 실행 (PATH 의 node 에 의존하지 않음).
     brainProc = spawn(process.execPath, [brainPath], {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PORT: String(port) },
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", "pipe"], // stderr 캡처 → 두뇌가 죽으면 진짜 원인을 출력 채널에 노출
+      windowsHide: true, // 콘솔 창 깜빡임 방지(윈도우)
     });
+    brainProc.stderr?.on("data", (d) => log(`두뇌 stderr: ${String(d).trim()}`));
     brainProc.on("error", (e) => log(`두뇌 자동기동 실패: ${e.message}`));
-    // stdio:ignore 라 자식이 즉시 죽어도 안 보인다 → 종료코드를 로그로 노출(윈도우 진단용).
+    // stdio 무시라 자식이 즉시 죽어도 안 보인다 → 종료코드를 로그로 노출(윈도우 진단용).
     brainProc.on("exit", (code, signal) => {
       if (code !== 0 && code !== null) log(`두뇌 프로세스 종료: code=${code}${signal ? ` signal=${signal}` : ""} (포트 ${port} 충돌·바인딩 실패 가능)`);
     });
@@ -312,6 +314,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.workspace.onDidSaveTextDocument(onSave),
     createFileWatcher(),
+    createGitWatcher(),
     vscode.commands.registerCommand("ripple.reconnect", () => {
       log("수동 재연결");
       connect();
@@ -451,6 +454,91 @@ async function onDiskChange(uri: vscode.Uri): Promise<void> {
   }
 }
 
+// ── 커밋·푸시 감시 ────────────────────────────────────────────────────────
+// .git 의 reflog 를 감시해 커밋(로컬)·푸시(원격)도 같은 엔진으로 분석한다. 저장(라이브)과
+// 별개 출처라 피드에서 뱃지로 구분된다. reflog 액션으로 커밋/푸시만 골라(체크아웃·fetch 제외).
+const GIT_MAX_FILES = 60; // 한 커밋/푸시에서 분석할 코드파일 상한 (대형 커밋 폭주 방지)
+let lastHeadSha = "";
+const lastPushSha = new Map<string, string>(); // ref → 마지막 분석한 sha
+
+function gitRoot(): string | undefined {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+/** 워크스페이스 루트에서 git 실행 (실패하면 빈 문자열). */
+function git(args: string[]): string {
+  const root = gitRoot();
+  if (!root) return "";
+  try {
+    return execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).trim();
+  } catch {
+    return "";
+  }
+}
+
+/** old..new 범위의 코드파일별 diff 를 변경으로 전송 (커밋/푸시 공용). */
+function analyzeGitRange(oldRef: string, newRef: string, source: "commit" | "push", commit: CommitRef): void {
+  if (!oldRef || !newRef || oldRef === newRef) return;
+  const files = git(["diff", "--name-only", oldRef, newRef])
+    .split("\n")
+    .filter(Boolean)
+    .filter((f) => CODE_RE.test(f) && !/(^|\/)(node_modules|\.git|dist|build|out|\.next|vendor)\//.test(f))
+    .slice(0, GIT_MAX_FILES);
+  let sent = 0;
+  for (const file of files) {
+    const diff = git(["diff", oldRef, newRef, "--", file]);
+    if (!diff) continue;
+    send({ type: "change", userId: userId(), repo: repoName(), file, diff, source, commit });
+    sent += 1;
+  }
+  if (sent > 0) log(`${source} 변경 ${sent}건 분석 요청 (${commit.sha.slice(0, 7)})`);
+}
+
+/** HEAD reflog 변화 → 로컬 커밋이면 그 커밋의 영향을 분석. (체크아웃·리셋·머지 제외) */
+function onHeadChange(): void {
+  const action = git(["log", "-g", "-1", "--format=%gs"]); // HEAD reflog 최신 subject
+  if (!/^commit(\b|\s|\(|:)/.test(action)) return; // "commit"/"commit (amend)"/"commit (initial)" 만
+  const head = git(["rev-parse", "HEAD"]);
+  if (!head || head === lastHeadSha) return;
+  lastHeadSha = head;
+  const parent = git(["rev-parse", "HEAD^"]);
+  if (!parent) return; // 최초 커밋(부모 없음)
+  const subject = git(["log", "-1", "--format=%s"]);
+  analyzeGitRange(parent, head, "commit", { sha: head, subject });
+}
+
+/** 원격 추적 ref reflog 변화 → '푸시' 액션이면 푸시된 범위를 분석. (fetch/pull 제외) */
+function onPushChange(uri: vscode.Uri): void {
+  const m = uri.path.match(/\.git\/logs\/refs\/remotes\/([^/]+)\/(.+)$/);
+  if (!m) return;
+  const ref = `refs/remotes/${m[1]}/${m[2]}`;
+  const action = git(["log", "-g", "-1", "--format=%gs", ref]);
+  if (!/push/i.test(action)) return; // "update by push" 만 (fetch/fast-forward 제외)
+  const newSha = git(["rev-parse", ref]);
+  if (!newSha || lastPushSha.get(ref) === newSha) return;
+  lastPushSha.set(ref, newSha);
+  let oldSha = git(["rev-parse", `${ref}@{1}`]); // 직전 원격값
+  if (!oldSha || oldSha === newSha) oldSha = git(["rev-parse", `${newSha}^`]);
+  analyzeGitRange(oldSha, newSha, "push", { sha: newSha, ref: `${m[1]}/${m[2]}` });
+}
+
+/** .git 의 reflog 감시 (커밋=HEAD, 푸시=원격 추적 ref). 시작 시점 HEAD 를 기준선으로 둔다. */
+function createGitWatcher(): vscode.Disposable {
+  const root = vscode.workspace.workspaceFolders?.[0];
+  if (!root) return new vscode.Disposable(() => undefined);
+  lastHeadSha = git(["rev-parse", "HEAD"]); // 과거 커밋 재분석 방지
+  const headW = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, ".git/logs/HEAD"));
+  const pushW = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, ".git/logs/refs/remotes/**"));
+  return vscode.Disposable.from(
+    headW,
+    pushW,
+    headW.onDidChange(() => onHeadChange()),
+    headW.onDidCreate(() => onHeadChange()),
+    pushW.onDidChange((uri) => onPushChange(uri)),
+    pushW.onDidCreate((uri) => onPushChange(uri)),
+  );
+}
+
 async function connect(): Promise<void> {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   socket?.removeAllListeners();
@@ -553,8 +641,9 @@ async function handleImpact(msg: ImpactMessage): Promise<void> {
   const sites = hitsMe && matched ? await findUseSites(matched, msg.changedSymbols ?? []) : [];
   feed.push(msg, { mine, hitsMe, sites });
 
-  // 백필(replay)·PR 출처는 피드에만 채우고 팝업은 안 띄운다 (PR 은 게이트라 조용히 피드로).
-  if (msg.replay || msg.source === "pr") return;
+  // 백필(replay)·저장 외 출처(commit/push/pr)는 피드에만 채우고 팝업은 안 띄운다.
+  // (커밋/푸시/PR 은 체크포인트라 조용히 피드로 — 라이브 저장만 능동 알림.)
+  if (msg.replay || (msg.source && msg.source !== "save")) return;
   if (!hitsMe || !matched) return;
 
   // 상태바 카운트는 "남의 변경이 나를 친 것"만 — 자기 변경으로 카운트를 부풀리지 않는다.

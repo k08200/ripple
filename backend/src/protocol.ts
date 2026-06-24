@@ -38,6 +38,19 @@ export interface PrRef {
   head: string;
 }
 
+/** 변경 출처. save=라이브 저장, commit=로컬 커밋, push=원격 푸시, pr=GitHub PR. */
+export type ChangeSource = "save" | "pr" | "commit" | "push";
+
+/** 커밋/푸시 출처 정보 — git 로그(reflog)에서 도출. 중복 분석 방지 키이기도 하다. */
+export interface CommitRef {
+  /** 새 커밋 sha (푸시면 푸시된 head). */
+  sha: string;
+  /** 커밋 제목 한 줄(옵션). */
+  subject?: string;
+  /** 브랜치/ref 이름(옵션, 주로 푸시에서). */
+  ref?: string;
+}
+
 /** 파일 저장(또는 PR) 시 보내는 변경 이벤트. */
 export interface ChangeMessage {
   type: "change";
@@ -49,9 +62,10 @@ export interface ChangeMessage {
   diff: string;
   /** 저장 직후 이 파일의 갱신된 심볼 인덱스(옵션) — 세션 중 인덱스를 최신으로 유지. */
   index?: FileIndex;
-  /** 출처. 기본 save. PR 이면 pr 메타 동반. */
-  source?: "save" | "pr";
+  /** 출처. 기본 save. pr 이면 pr 메타, commit/push 면 commit 메타 동반. */
+  source?: ChangeSource;
   pr?: PrRef;
+  commit?: CommitRef;
 }
 
 /** 파일 생성/삭제 시 인덱스 한 항목을 즉시 갱신/제거 (세션 중 신규 파일도 분석 후보로). */
@@ -97,9 +111,10 @@ export interface ImpactMessage {
   changedSymbols: string[];
   /** 바뀐 export 의 before→after 선언 (시그니처 변경의 '어떻게'). */
   changeDetails: ChangeDetail[];
-  /** 출처(save/pr). PR 이면 pr 메타로 피드에서 PR 뱃지·링크 표시. */
-  source?: "save" | "pr";
+  /** 출처(save/commit/push/pr). 피드에서 출처 뱃지로 구분 표시. */
+  source?: ChangeSource;
   pr?: PrRef;
+  commit?: CommitRef;
   /** epoch millis. */
   ts: number;
   /** 접속 시 백필된 과거 변경이면 true — 클라는 알림 팝업 없이 피드에만 채운다. */

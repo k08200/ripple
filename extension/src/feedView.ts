@@ -104,6 +104,9 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
   .you { background: var(--vscode-focusBorder); color: #fff; }
   .pr { background: #8957e5; color: #fff; cursor: pointer; }
   .pr:hover { filter: brightness(1.15); }
+  .commit { background: #2ea043; color: #fff; }
+  .push { background: #db6d28; color: #fff; }
+  .save { background: #1f6feb; color: #fff; }
 </style></head>
 <body>
   <div id="empty" class="empty">아직 변경 없음. 팀원이 파일을 저장하면 여기에 떠요.</div>
@@ -137,11 +140,19 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
       }).join('');
       // 내게 영향이면, 내 코드의 실제 사용 위치(file:line + 코드)를 클릭 가능하게 보여준다.
       const sites = (m.sites || []).map(s => '<div class="site" title="이 줄로 점프" data-path="' + esc(s.rel) + '" data-line="' + s.line + '"><span class="loc">' + esc(s.rel.split('/').pop()) + ':' + s.line + '</span>  <code>' + esc(s.text) + '</code></div>').join('');
-      const prBadge = (m.source === 'pr' && m.pr) ? '<span class="badge pr" data-url="' + esc(m.pr.url) + '" title="' + esc(m.pr.title) + ' — 클릭하면 PR 열기">PR #' + m.pr.number + '</span>' : '';
+      // 출처 뱃지 — PR(보라, 클릭=PR 열기) / 커밋(초록) / 푸시(주황) / 저장(파랑, 기본이라 생략).
+      let srcBadge = '';
+      if (m.source === 'pr' && m.pr) {
+        srcBadge = '<span class="badge pr" data-url="' + esc(m.pr.url) + '" title="' + esc(m.pr.title) + ' — 클릭하면 PR 열기">PR #' + m.pr.number + '</span>';
+      } else if (m.source === 'commit' && m.commit) {
+        srcBadge = '<span class="badge commit" title="' + esc(m.commit.subject || '') + '">커밋 ' + esc((m.commit.sha || '').slice(0, 7)) + '</span>';
+      } else if (m.source === 'push' && m.commit) {
+        srcBadge = '<span class="badge push" title="' + esc(m.commit.ref || '') + ' 로 푸시">푸시 ' + esc((m.commit.sha || '').slice(0, 7)) + '</span>';
+      }
       div.innerHTML =
         '<div class="head">' +
           '<span class="author">' + esc(m.author) + (m.mine ? ' <span class="badge you">나</span>' : '') + '</span>' +
-          prBadge +
+          srcBadge +
           (m.hitsMe ? '<span class="badge">너에게 영향</span>' : '') +
           '<span style="flex:1"></span><span class="path">' + when + '</span>' +
         '</div>' +

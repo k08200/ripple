@@ -117,7 +117,7 @@ function parse(raw: string): ClientMessage | null {
   return null;
 }
 
-/** 같은 PR(같은 head)·같은 파일은 한 번만 분석 — 여러 클라가 폴링해 보내도 피드 중복 방지. */
+/** 같은 PR/커밋/푸시(같은 sha)·같은 파일은 한 번만 분석 — 여러 클라가 보내도 피드 중복 방지. */
 const prSeen = new Set<string>();
 const PR_SEEN_MAX = 2000;
 
@@ -130,10 +130,16 @@ async function handleChange(
     console.log(`[skip] 비밀 파일 분석 제외: ${msg.repo}/${msg.file}`);
     return;
   }
-  if (msg.source === "pr" && msg.pr) {
-    const key = `${team}#${msg.pr.url}#${msg.pr.head}#${msg.file}`;
-    if (prSeen.has(key)) return; // 이미 분석한 PR 변경
-    prSeen.add(key);
+  // PR/커밋/푸시는 같은 sha·파일을 한 번만 분석한다 (여러 클라가 같은 커밋을 보고할 수 있음).
+  const dedupKey =
+    msg.source === "pr" && msg.pr
+      ? `${team}#pr#${msg.pr.url}#${msg.pr.head}#${msg.file}`
+      : (msg.source === "commit" || msg.source === "push") && msg.commit
+        ? `${team}#${msg.source}#${msg.commit.sha}#${msg.file}`
+        : "";
+  if (dedupKey) {
+    if (prSeen.has(dedupKey)) return; // 이미 분석함
+    prSeen.add(dedupKey);
     if (prSeen.size > PR_SEEN_MAX) prSeen.delete(prSeen.values().next().value as string);
   }
   const { result, usedProvider } = await analyze(provider, {
@@ -157,6 +163,7 @@ async function handleChange(
     changeDetails: result.changeDetails,
     source: msg.source ?? "save",
     pr: msg.pr,
+    commit: msg.commit,
     ts: Date.now(),
   };
 
@@ -165,7 +172,7 @@ async function handleChange(
   persistHistory();
 
   console.log(
-    `[change] ${msg.userId} ${msg.repo}/${msg.file} ` +
+    `[change:${impact.source}] ${msg.userId} ${msg.repo}/${msg.file} ` +
       `→ ${impact.severity} · 영향 ${impact.affected.length}건 (${usedProvider}) [team ${team}]`,
   );
   broadcast(impact, team);
@@ -291,9 +298,14 @@ http.on("error", (err: NodeJS.ErrnoException) => {
   process.exit(1); // 이미 두뇌가 떠 있으면 깔끔히 양보 (중복 바인딩 금지)
 });
 
-http.listen(PORT, () => {
+// IPv4(0.0.0.0)로 명시 바인딩. host 를 생략하면 Node 는 IPv6 `::` 에 묶는데, 윈도우는 그 소켓이
+// 기본 V6ONLY 라 IPv4(127.0.0.1) 연결을 거부한다(맥은 듀얼스택이라 우연히 통과돼 안 보임).
+// 발견(udp4)·헬스체크·클라이언트가 전부 IPv4라 서버도 IPv4로 통일해야 윈도우에서 붙는다.
+// RIPPLE_HOST=127.0.0.1 로 두면 LAN 노출 없이 로컬 전용(방화벽 프롬프트도 안 뜸).
+const HOST = (process.env.RIPPLE_HOST ?? "0.0.0.0").trim();
+http.listen(PORT, HOST, () => {
   console.log(
-    `🌊 Ripple 백엔드 가동 · ws://localhost:${PORT} · provider=${provider.name}` +
+    `🌊 Ripple 백엔드 가동 · ws://127.0.0.1:${PORT} (bind ${HOST}) · provider=${provider.name}` +
       (history.length > 0 ? ` · 히스토리 ${history.length}건 복원` : ""),
   );
   if (provider.name === "mock") {

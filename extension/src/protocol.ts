@@ -25,6 +25,14 @@ export interface PrRef {
   head: string;
 }
 
+export type ChangeSource = "save" | "pr" | "commit" | "push";
+
+export interface CommitRef {
+  sha: string;
+  subject?: string;
+  ref?: string;
+}
+
 export interface ChangeMessage {
   type: "change";
   userId: string;
@@ -32,8 +40,9 @@ export interface ChangeMessage {
   file: string;
   diff: string;
   index?: FileIndex;
-  source?: "save" | "pr";
+  source?: ChangeSource;
   pr?: PrRef;
+  commit?: CommitRef;
 }
 
 export interface IndexMessage {
@@ -69,8 +78,9 @@ export interface ImpactMessage {
   affected: AffectedHint[];
   changedSymbols: string[];
   changeDetails: ChangeDetail[];
-  source?: "save" | "pr";
+  source?: ChangeSource;
   pr?: PrRef;
+  commit?: CommitRef;
   ts: number;
   replay?: boolean;
 }
