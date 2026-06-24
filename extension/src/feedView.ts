@@ -48,20 +48,45 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
     this.view = view;
     view.webview.options = { enableScripts: true };
     view.webview.html = this.html();
-    view.webview.onDidReceiveMessage((m: { type?: string; path?: string; line?: number; url?: string }) => {
-      // 웹뷰 스크립트가 준비됐다고 알리면 그제서야 history 를 보낸다(race 방지).
-      if (m?.type === "ready") {
-        for (const item of this.history) view.webview.postMessage(item);
-        return;
-      }
-      // PR 뱃지 클릭 → 브라우저로 PR 열기.
-      if (m?.type === "openUrl" && m.url) {
-        void vscode.env.openExternal(vscode.Uri.parse(m.url));
-        return;
-      }
-      // 피드 항목 클릭 → 그 파일(있으면 그 줄로) 열기.
-      if (m?.type === "open" && m.path) void openByHint(m.path, m.line);
-    });
+    view.webview.onDidReceiveMessage(
+      (m: { type?: string; path?: string; line?: number; url?: string; id?: string; ids?: string[] }) => {
+        // 웹뷰 스크립트가 준비됐다고 알리면 그제서야 history 를 보낸다(race 방지).
+        if (m?.type === "ready") {
+          for (const item of this.history) view.webview.postMessage(item);
+          return;
+        }
+        // PR 뱃지 클릭 → 브라우저로 PR 열기.
+        if (m?.type === "openUrl" && m.url) {
+          void vscode.env.openExternal(vscode.Uri.parse(m.url));
+          return;
+        }
+        // 피드 항목 클릭 → 그 파일(있으면 그 줄로) 열기.
+        if (m?.type === "open" && m.path) {
+          void openByHint(m.path, m.line);
+          return;
+        }
+        // 삭제 — 웹뷰가 DOM 은 직접 지우고, 여기선 history 에서 빼 재오픈해도 안 돌아오게 한다.
+        if (m?.type === "delete" && m.id) {
+          this.removeIds([m.id]);
+          return;
+        }
+        if (m?.type === "deleteMany" && Array.isArray(m.ids)) {
+          this.removeIds(m.ids);
+          return;
+        }
+        if (m?.type === "clear") {
+          this.history.length = 0;
+        }
+      },
+    );
+  }
+
+  /** history 에서 주어진 id 들을 제거 (제자리 변형 — 재오픈 시 안 보이게). */
+  private removeIds(ids: string[]): void {
+    const drop = new Set(ids);
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      if (drop.has(this.history[i].id)) this.history.splice(i, 1);
+    }
   }
 
   push(item: ImpactMessage, opts: { mine: boolean; hitsMe: boolean; sites?: UseSite[] }): void {
@@ -111,16 +136,77 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
   .risk-low { background: #9e6a03; color: #fff; }
   .risk-info { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); opacity: .8; }
   .hitme { background: var(--vscode-focusBorder); color: #fff; }
+  #toolbar { display: none; gap: 6px; align-items: center; padding: 2px 2px 8px; margin-bottom: 4px; position: sticky; top: 0; z-index: 2; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--vscode-panel-border); }
+  #toolbar button { font-size: 11px; padding: 2px 8px; cursor: pointer; border: none; border-radius: 3px; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+  #toolbar button:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  #clearBtn { color: var(--vscode-errorForeground); }
+  .del { margin-left: 6px; cursor: pointer; color: var(--vscode-descriptionForeground); padding: 0 4px; border-radius: 3px; font-weight: 700; }
+  .del:hover { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-errorForeground); }
+  .sel-cb { display: none; margin-right: 2px; vertical-align: middle; }
+  body.selecting .sel-cb { display: inline-block; }
+  body.selecting .del { display: none; }
+  body.selecting .item { cursor: pointer; }
 </style></head>
 <body>
+  <div id="toolbar">
+    <button id="selectBtn" title="여러 개 골라 삭제">선택</button>
+    <button id="clearBtn" title="피드 전체 삭제">전체 삭제</button>
+    <span id="selActions" style="display:none">
+      <button id="delSelBtn">선택 삭제 (0)</button>
+      <button id="cancelBtn">취소</button>
+    </span>
+  </div>
   <div id="empty" class="empty">아직 변경 없음. 팀원이 파일을 저장하면 여기에 떠요.</div>
   <div id="list"></div>
   <script>
     const vscode = acquireVsCodeApi();
     const list = document.getElementById('list');
     const empty = document.getElementById('empty');
+    const toolbar = document.getElementById('toolbar');
+    const selectBtn = document.getElementById('selectBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const selActions = document.getElementById('selActions');
+    const delSelBtn = document.getElementById('delSelBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
     const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    let selecting = false;
+    const checks = () => [...list.querySelectorAll('.sel-cb')];
+    function refresh() {
+      const has = list.children.length > 0;
+      toolbar.style.display = has ? 'flex' : 'none';
+      empty.style.display = has ? 'none' : 'block';
+      if (!has && selecting) exitSelect();
+    }
+    function updateCount() { delSelBtn.textContent = '선택 삭제 (' + checks().filter(c => c.checked).length + ')'; }
+    function enterSelect() { selecting = true; document.body.classList.add('selecting'); selActions.style.display = 'inline'; selectBtn.style.display = 'none'; clearBtn.style.display = 'none'; updateCount(); }
+    function exitSelect() { selecting = false; document.body.classList.remove('selecting'); selActions.style.display = 'none'; selectBtn.style.display = ''; clearBtn.style.display = ''; checks().forEach(c => c.checked = false); }
+    selectBtn.onclick = enterSelect;
+    cancelBtn.onclick = exitSelect;
+    clearBtn.onclick = () => { list.innerHTML = ''; vscode.postMessage({ type: 'clear' }); refresh(); };
+    delSelBtn.onclick = () => {
+      const ids = [];
+      [...list.querySelectorAll('.item')].forEach(it => {
+        const cb = it.querySelector('.sel-cb');
+        if (cb && cb.checked) { ids.push(it.dataset.id); it.remove(); }
+      });
+      if (ids.length) vscode.postMessage({ type: 'deleteMany', ids });
+      exitSelect();
+      refresh();
+    };
+
+    list.addEventListener('change', (e) => { if (e.target.classList.contains('sel-cb')) updateCount(); });
     list.addEventListener('click', (e) => {
+      // 한개씩 삭제 — 시간 옆 × 버튼.
+      const del = e.target.closest('.del');
+      if (del) { const it = del.closest('.item'); if (it) { vscode.postMessage({ type: 'delete', id: it.dataset.id }); it.remove(); refresh(); } return; }
+      // 선택 모드에선 항목 클릭 = 체크 토글 (체크박스 직접 클릭 제외).
+      if (selecting && !e.target.classList.contains('sel-cb')) {
+        const it = e.target.closest('.item');
+        const cb = it && it.querySelector('.sel-cb');
+        if (cb) { cb.checked = !cb.checked; updateCount(); }
+        return;
+      }
       const pr = e.target.closest('.pr');
       if (pr && pr.dataset.url) { vscode.postMessage({ type: 'openUrl', url: pr.dataset.url }); return; }
       const site = e.target.closest('.site');
@@ -133,6 +219,7 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
       empty.style.display = 'none';
       const div = document.createElement('div');
       div.className = 'item ' + m.severity + (m.hitsMe ? ' hit' : '');
+      div.dataset.id = m.id;
       const when = new Date(m.ts).toLocaleTimeString();
       const aff = (m.affected || []).map(a => '<div class="aff" title="클릭하면 열기" data-path="' + esc(a.pathHint) + '">↳ <b>' + esc(a.pathHint) + '</b> — ' + esc(a.reason) + '</div>').join('');
       // 어떻게 바뀌었나: 시그니처 before→after.
@@ -160,15 +247,18 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
       const riskBadge = '<span class="badge ' + rk[0] + '" title="위험도: ' + (m.severity === 'high' ? '계약 변경 — 호출부가 부서질 수 있음' : m.severity === 'low' ? '추가 변경 — 기존 코드엔 안전' : '내부 변경 — 영향 없음') + '">' + rk[1] + (blast > 0 ? ' · ' + blast + '곳' : '') + '</span>';
       div.innerHTML =
         '<div class="head">' +
+          '<input type="checkbox" class="sel-cb" title="선택" />' +
           riskBadge +
           '<span class="author">' + esc(m.author) + (m.mine ? ' <span class="badge you">나</span>' : '') + '</span>' +
           srcBadge +
           (m.hitsMe ? '<span class="badge hitme">너에게 영향</span>' : '') +
           '<span style="flex:1"></span><span class="path">' + when + '</span>' +
+          '<span class="del" title="이 항목 삭제">×</span>' +
         '</div>' +
         '<div class="path">' + esc(m.repo) + '/' + esc(m.file) + '</div>' +
         '<div class="summary">' + esc(m.summary) + '</div>' + deltas + aff + sites;
       list.prepend(div);
+      refresh();
     });
     // 스크립트 준비 완료 → 확장에 history 재전송 요청 (나중에 열어도 과거 항목이 뜬다).
     vscode.postMessage({ type: 'ready' });
