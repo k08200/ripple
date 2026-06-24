@@ -86,6 +86,29 @@ test("register → change → 영향받는 클라에 impact 브로드캐스트",
   await sleep(100);
 });
 
+test("혼자(단일 클라): 자기 변경의 영향을 자기도 받는다 — 호출부 리마인더의 토대", async () => {
+  // 시나리오 3: 팀원 없이 혼자 작업해도 동작해야 한다.
+  // 한 명이 pay.ts 와 client.ts 를 모두 가진 채 pay.ts 의 계약을 바꾸면,
+  // 서버는 작성자 제외 없이 되돌려주고 affected 에 자기 client.ts 가 잡혀야 한다.
+  const solo = client("solo", "api", [payIdx, clientIdx]);
+  await solo.ready;
+  await sleep(150);
+
+  solo.save("src/pay.ts", SIG_DIFF, payIdx);
+  await sleep(600);
+
+  const impact = solo.inbox.find((m) => m.type === "impact" && !m.replay);
+  assert.ok(impact, "혼자일 때 작성자가 자기 impact 를 못 받음 (작성자 제외돼버림)");
+  assert.equal(impact.author, "solo");
+  assert.ok(
+    impact.affected.some((a) => a.pathHint.includes("client.ts")),
+    "자기 다른 파일(client.ts)이 영향자로 안 잡힘",
+  );
+  assert.ok(impact.changedSymbols.includes("charge"), "changedSymbols 에 charge 없음");
+  solo.close();
+  await sleep(100);
+});
+
 test("늦게 접속한 클라가 놓친 영향을 replay 로 백필받는다", async () => {
   // 1) 아무도 안 보는 사이 carol 이 계약 변경 저장
   const carol = client("carol", "api", [payIdx]);

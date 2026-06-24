@@ -471,26 +471,32 @@ async function findUseSites(fullPath: string, symbols: string[]): Promise<UseSit
 
 async function handleImpact(msg: ImpactMessage): Promise<void> {
   const mine = msg.author === userId();
+  // 남의 변경이든 내 변경이든, 영향이 "내 다른 파일"에 닿는지 찾는다.
+  // 혼자 작업해도 동작해야 하므로(시나리오 3): 방금 바꾼 심볼이 내 *다른* 파일
+  // 어디에서 쓰이는지 짚어준다. 단, 방금 바꾼 파일 자신은 영향에서 제외한다.
+  const sourceKey = `${repoName()}/${msg.file}`.toLowerCase();
   let matched: string | undefined;
-  if (!mine) {
-    for (const a of msg.affected) {
-      matched = matchMine(a.pathHint);
-      if (matched) break;
+  for (const a of msg.affected) {
+    const m = matchMine(a.pathHint);
+    if (m && m.toLowerCase() !== sourceKey) {
+      matched = m;
+      break;
     }
   }
   const hitsMe = Boolean(matched);
-  // 내게 영향이면, 내 코드의 실제 사용 위치를 찾아 함께 보여준다 (어디서 어떻게 깨지나).
+  // 영향이면, 내 코드의 실제 사용 위치를 찾아 함께 보여준다 (어디서 어떻게 깨지나).
   const sites = hitsMe && matched ? await findUseSites(matched, msg.changedSymbols ?? []) : [];
   feed.push(msg, { mine, hitsMe, sites });
 
   // 백필(replay)·PR 출처는 피드에만 채우고 팝업은 안 띄운다 (PR 은 게이트라 조용히 피드로).
   if (msg.replay || msg.source === "pr") return;
+  if (!hitsMe || !matched) return;
 
-  if (hitsMe && !mine) {
+  // 상태바 카운트는 "남의 변경이 나를 친 것"만 — 자기 변경으로 카운트를 부풀리지 않는다.
+  if (!mine) {
     impactCount += 1;
     updateStatus();
   }
-  if (!hitsMe) return;
   const reason = msg.affected.find((a) => matchMine(a.pathHint) === matched)?.reason ?? "";
   const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + "…" : s);
   const more = sites.length > 1 ? ` 외 ${sites.length - 1}곳` : "";
@@ -502,10 +508,14 @@ async function handleImpact(msg: ImpactMessage): Promise<void> {
     : d && d.before && d.after
       ? `\n${cut(d.before, 90)} → ${cut(d.after, 90)}`
       : "";
-  // 서버발(發) 문자열은 길이 제한 — 과대 알림/스팸 방지.
-  const text = `🌊 ${cut(msg.author, 40)} · ${cut(msg.repo, 30)}/${cut(msg.file, 80)} → 너의 ${cut(matched ?? "", 80)} 영향${at}: ${cut(reason, 120)}${how}`;
+  const target = cut(matched, 80);
+  // 자기 변경 → 호출부 리마인더(info): "방금 바꾼 게 네 다른 파일에서도 쓰인다, 확인해".
+  // 남의 변경 → 영향 알림(계약 깨짐=warning, 그 외 info). 둘 다 길이 제한으로 스팸 방지.
+  const text = mine
+    ? `🌊 방금 바꾼 ${cut(msg.file, 60)} → 너의 ${target}${at} 에서도 쓰임 — 확인해${how}`
+    : `🌊 ${cut(msg.author, 40)} · ${cut(msg.repo, 30)}/${cut(msg.file, 80)} → 너의 ${target} 영향${at}: ${cut(reason, 120)}${how}`;
   // 팝업의 "열기" → 사용처 줄이 있으면 그 줄로, 없으면 파일로.
-  const show = msg.severity === "high" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
+  const show = !mine && msg.severity === "high" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
   void show(text, "열기").then((pick) => {
     if (pick === "열기" && matched) void openByHint(sites[0]?.rel ?? matched, sites[0]?.line);
   });
