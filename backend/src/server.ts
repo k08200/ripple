@@ -10,7 +10,11 @@ import { startResponder } from "./discovery.js";
 import { analyze, selectProvider } from "./analyzer.js";
 
 const PORT = Number(process.env.PORT ?? 7077);
-const MAX_PAYLOAD = 512 * 1024; // 인바운드 메시지 상한 (DoS 방지)
+// 인바운드 메시지 상한. register 는 전체 인덱스(최대 수천 파일의 exports/imports/refs)를
+// 동봉하므로 큰 모노레포(klorn 등)는 512KB 를 쉽게 넘긴다 → 그러면 register 가 거부되어
+// 무한 재연결만 돌고 그 클라는 영구 먹통이 됐다. 신뢰 그룹(공유 토큰·같은 LAN) 전제라
+// MAX_FILES_PER_CLIENT(5000) 인덱스가 들어갈 만큼 넉넉히 잡는다.
+const MAX_PAYLOAD = 32 * 1024 * 1024;
 const MAX_CLIENTS = 200;
 const MAX_FILES_PER_CLIENT = 5000;
 const RIPPLE_SECRET = (process.env.RIPPLE_SECRET ?? "").trim();
@@ -279,6 +283,12 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("error", (err) => console.error("[ws error]", err.message));
+});
+
+// listen 실패(포트 충돌 EADDRINUSE·권한 EACCES)는 'error' 로 온다 — 핸들러가 없으면 조용히 크래시.
+http.on("error", (err: NodeJS.ErrnoException) => {
+  console.error(`[server] listen 실패 (${err.code ?? "?"}): ${err.message}`);
+  process.exit(1); // 이미 두뇌가 떠 있으면 깔끔히 양보 (중복 바인딩 금지)
 });
 
 http.listen(PORT, () => {

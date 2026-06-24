@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isLocalUrl, parsePort, shouldAutoStart, electionDelayMs, ELECTION_MAX_MS } from "../src/autostart.ts";
+import { isLocalUrl, isDefaultLocal, parsePort, shouldAutoStart, electionDelayMs, ELECTION_MAX_MS } from "../src/autostart.ts";
 
 test("로컬 주소 판별", () => {
   assert.ok(isLocalUrl("ws://localhost:7077"));
@@ -8,6 +8,17 @@ test("로컬 주소 판별", () => {
   assert.ok(isLocalUrl("ws://localhost"));
   assert.equal(isLocalUrl("ws://brain.team.com:7077"), false);
   assert.equal(isLocalUrl("wss://ripple.example.com"), false);
+});
+
+test("기본 로컬 판별: localhost/127.0.0.1:7077 은 둘 다 '수동 지정 아님'", () => {
+  // 윈도우 IPv6 함정 회피의 핵심 — 설정에 localhost 가 남아 있어도 자동기동/127.0.0.1 경로를 타야 한다.
+  assert.ok(isDefaultLocal("ws://localhost:7077"));
+  assert.ok(isDefaultLocal("ws://127.0.0.1:7077"));
+  assert.ok(isDefaultLocal("ws://127.0.0.1:7077/"));
+  // 다른 포트·원격은 수동 지정으로 본다(자동기동 안 함).
+  assert.equal(isDefaultLocal("ws://localhost:9000"), false);
+  assert.equal(isDefaultLocal("wss://brain.team.com"), false);
+  assert.equal(isDefaultLocal(""), false);
 });
 
 test("포트 파싱 (없으면 기본 7077)", () => {

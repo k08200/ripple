@@ -5,6 +5,12 @@ export function isLocalUrl(url: string): boolean {
   return /^wss?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(url.trim());
 }
 
+/** 기본 로컬 두뇌 주소인가 — localhost/127.0.0.1 의 기본 포트(7077)면 "수동 지정 아님"으로 본다.
+ *  설정에 ws://localhost:7077 이 남아 있어도 자동기동·127.0.0.1 수렴 경로를 타게 하기 위함. */
+export function isDefaultLocal(url: string): boolean {
+  return /^wss?:\/\/(localhost|127\.0\.0\.1):7077\/?$/.test(url.trim());
+}
+
 export function parsePort(url: string, fallback = 7077): number {
   const m = url.match(/:(\d{2,5})(\/|$)/);
   return m ? Number(m[1]) : fallback;

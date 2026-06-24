@@ -109,6 +109,31 @@ test("혼자(단일 클라): 자기 변경의 영향을 자기도 받는다 — 
   await sleep(100);
 });
 
+test("큰 모노레포 register(인덱스 >512KB)도 수락된다 — payload 거부로 먹통되던 회귀 방지", async () => {
+  // 실전 버그: 인바운드 상한이 512KB 였을 때, 큰 repo(수천 파일)의 인덱스 동봉 register 가
+  // 프레임 크기 초과로 거부 → 무한 재연결만 돌고 그 창은 영구 먹통이었다. 상한을 넉넉히
+  // 올린 뒤로 수락돼야 한다. presence 에 자기가 잡히면 = register 성공(연결 안 끊김).
+  const big = [];
+  for (let i = 0; i < 3000; i++) {
+    big.push({
+      path: `packages/service/src/modules/feature${i}/handlers/file${i}.ts`,
+      exports: [`createHandler${i}`, `updateHandler${i}`, `deleteHandler${i}`, `listHandler${i}`, `validateInput${i}`, `serializeOutput${i}`],
+      imports: [`../../../shared/utils/helper${i}`, `../../../core/base/foundation${i}`, `../types/contracts${i}`],
+      refs: [`SharedSymbolOne${i}`, `SharedSymbolTwo${i}`, `SharedSymbolThree${i}`, `SharedSymbolFour${i}`],
+    });
+  }
+  assert.ok(JSON.stringify(big).length > 512 * 1024, `테스트 전제: 인덱스가 512KB 를 넘어야 함 (현재 ${Math.round(JSON.stringify(big).length / 1024)}KB)`);
+
+  const big1 = client("big1", "mono", big, "team-big");
+  await big1.ready;
+  await sleep(500);
+
+  const pres = big1.inbox.find((m) => m.type === "presence" && m.peers.some((p) => p.userId === "big1"));
+  assert.ok(pres, "큰 register 가 거부됨 — payload 상한 회귀 (클라가 먹통)");
+  big1.close();
+  await sleep(100);
+});
+
 test("늦게 접속한 클라가 놓친 영향을 replay 로 백필받는다", async () => {
   // 1) 아무도 안 보는 사이 carol 이 계약 변경 저장
   const carol = client("carol", "api", [payIdx]);

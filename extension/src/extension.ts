@@ -3,7 +3,7 @@ import * as http from "node:http";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import * as vscode from "vscode";
 import { WebSocket } from "ws";
-import { shouldAutoStart, parsePort, electionDelayMs } from "./autostart";
+import { shouldAutoStart, parsePort, electionDelayMs, isDefaultLocal } from "./autostart";
 import { normalizeTeam } from "./team";
 import { discoverBrain } from "./discovery";
 import { lineDiff } from "./diff";
@@ -23,8 +23,12 @@ const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 10_000;
 /** 선출 대기 후 그새 뜬 host 를 잡기 위한 재발견 창(ms). */
 const DISCOVERY_RETRY_MS = 1200;
+/** 끊긴 동안 보관할 변경 메시지 상한 (오래된 것부터 버림). */
+const PENDING_MAX = 200;
 
 let socket: WebSocket | undefined;
+/** 끊긴 동안 발생한 변경 — 기준선은 이미 전진했으므로 메시지를 보관했다 재연결 시 순서대로 전송. */
+const pendingChanges: ChangeMessage[] = [];
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectDelay = RECONNECT_BASE_MS;
 let output: vscode.OutputChannel;
@@ -32,7 +36,9 @@ let feed: FeedViewProvider;
 let status: vscode.StatusBarItem;
 let brainProc: ChildProcess | undefined;
 let extContext: vscode.ExtensionContext;
-const LOCAL_URL = "ws://localhost:7077";
+// 로컬 두뇌는 127.0.0.1 로 고정 — 윈도우는 `localhost` 를 ::1(IPv6) 로 먼저 해석해서
+// IPv4 로 뜬 서버에 ECONNREFUSED 가 난다(맥은 127.0.0.1 우선이라 안 보임). brainAlive 도 127.0.0.1 이라 일치.
+const LOCAL_URL = "ws://127.0.0.1:7077";
 /** 실제 연결할 주소 — 매 (재)연결마다 재해결(명시 설정 > LAN 발견 > 로컬 자동기동). */
 let activeUrl = LOCAL_URL;
 let connected = false;
@@ -169,10 +175,11 @@ const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 async function resolveBackendUrl(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("ripple");
   const explicit = (cfg.get<string>("backendUrl") ?? "").trim();
-  if (explicit && explicit !== LOCAL_URL) {
-    activeUrl = explicit; // 수동 설정 우선
+  if (explicit && !isDefaultLocal(explicit)) {
+    activeUrl = explicit; // 수동 설정 우선 (원격/팀 두뇌)
     return;
   }
+  // 설정에 ws://localhost:7077 이 남아 있어도 윈도우 IPv6 함정을 피하려 127.0.0.1 로 수렴시킨다.
   if (cfg.get<boolean>("autoDiscover", true)) {
     const found = await discoverBrain(1200);
     if (found) {
@@ -235,6 +242,10 @@ async function maybeStartBrain(url: string): Promise<void> {
       stdio: "ignore",
     });
     brainProc.on("error", (e) => log(`두뇌 자동기동 실패: ${e.message}`));
+    // stdio:ignore 라 자식이 즉시 죽어도 안 보인다 → 종료코드를 로그로 노출(윈도우 진단용).
+    brainProc.on("exit", (code, signal) => {
+      if (code !== 0 && code !== null) log(`두뇌 프로세스 종료: code=${code}${signal ? ` signal=${signal}` : ""} (포트 ${port} 충돌·바인딩 실패 가능)`);
+    });
     log(`로컬 두뇌 자동 기동 (포트 ${port})`);
     if (process.platform === "win32") {
       log("Windows 방화벽이 네트워크 접근을 물으면 '허용' 하세요 (팀 연결에 필요).");
@@ -336,7 +347,23 @@ function log(msg: string): void {
 }
 
 function send(obj: ChangeMessage | RegisterMessage | IndexMessage): void {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(obj));
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(obj));
+    return;
+  }
+  // 끊긴 상태: 변경은 보관(재연결 시 flush). register/index 는 재연결 open 에서 최신 인덱스로 재전송되므로 버려도 됨.
+  if (obj.type === "change") {
+    pendingChanges.push(obj);
+    if (pendingChanges.length > PENDING_MAX) pendingChanges.shift();
+  }
+}
+
+/** 보관해 둔 오프라인 변경을 순서대로 전송 (연결이 OPEN 일 때만). */
+function flushPending(): void {
+  if (socket?.readyState !== WebSocket.OPEN || pendingChanges.length === 0) return;
+  const queued = pendingChanges.splice(0, pendingChanges.length);
+  for (const m of queued) socket.send(JSON.stringify(m));
+  log(`오프라인 변경 ${queued.length}건 전송`);
 }
 
 /** 파일 생성/삭제 시 그 항목만 인덱스에 즉시 반영 (세션 중 신규 파일도 분석 후보로). */
@@ -429,6 +456,7 @@ async function connect(): Promise<void> {
       const { files, index } = registerPayload();
       const reg: RegisterMessage = { type: "register", userId: userId(), repo: repoName(), files, index, team: teamId() };
       send(reg);
+      flushPending(); // 끊긴 동안 쌓인 변경을 등록 직후 흘려보낸다 (유실 방지)
       log(`연결됨 · ${files.length}개 파일 등록 (인덱스 재사용)`);
       void pollPrs(); // 연결되면 열린 PR 영향도 피드로
 
