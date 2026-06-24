@@ -107,6 +107,10 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
   .commit { background: #2ea043; color: #fff; }
   .push { background: #db6d28; color: #fff; }
   .save { background: #1f6feb; color: #fff; }
+  .risk-high { background: #da3633; color: #fff; font-weight: 600; }
+  .risk-low { background: #9e6a03; color: #fff; }
+  .risk-info { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); opacity: .8; }
+  .hitme { background: var(--vscode-focusBorder); color: #fff; }
 </style></head>
 <body>
   <div id="empty" class="empty">아직 변경 없음. 팀원이 파일을 저장하면 여기에 떠요.</div>
@@ -149,11 +153,17 @@ export class FeedViewProvider implements vscode.WebviewViewProvider {
       } else if (m.source === 'push' && m.commit) {
         srcBadge = '<span class="badge push" title="' + esc(m.commit.ref || '') + ' 로 푸시">푸시 ' + esc((m.commit.sha || '').slice(0, 7)) + '</span>';
       }
+      // 위험도 — high=계약 깨짐(부서질 수 있음), low=추가, info=참고. 영향 파일 수(blast)도 함께.
+      const blast = (m.affected || []).length;
+      const riskMap = { high: ['risk-high', '🔴 높음'], low: ['risk-low', '🟡 주의'], info: ['risk-info', '⚪ 참고'] };
+      const rk = riskMap[m.severity] || riskMap.info;
+      const riskBadge = '<span class="badge ' + rk[0] + '" title="위험도: ' + (m.severity === 'high' ? '계약 변경 — 호출부가 부서질 수 있음' : m.severity === 'low' ? '추가 변경 — 기존 코드엔 안전' : '내부 변경 — 영향 없음') + '">' + rk[1] + (blast > 0 ? ' · ' + blast + '곳' : '') + '</span>';
       div.innerHTML =
         '<div class="head">' +
+          riskBadge +
           '<span class="author">' + esc(m.author) + (m.mine ? ' <span class="badge you">나</span>' : '') + '</span>' +
           srcBadge +
-          (m.hitsMe ? '<span class="badge">너에게 영향</span>' : '') +
+          (m.hitsMe ? '<span class="badge hitme">너에게 영향</span>' : '') +
           '<span style="flex:1"></span><span class="path">' + when + '</span>' +
         '</div>' +
         '<div class="path">' + esc(m.repo) + '/' + esc(m.file) + '</div>' +

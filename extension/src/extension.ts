@@ -651,6 +651,10 @@ async function handleImpact(msg: ImpactMessage): Promise<void> {
     impactCount += 1;
     updateStatus();
   }
+  // 오른쪽 아래 토스트는 "위험(high=계약 깨짐)이 내 코드에 닿은 것"만 — 나머지(추가/참고)는
+  // 피드로 충분하다. 저장마다 저위험 팝업이 뜨던 소음을 없앤다.
+  if (msg.severity !== "high") return;
+
   const reason = msg.affected.find((a) => matchMine(a.pathHint) === matched)?.reason ?? "";
   const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + "…" : s);
   const more = sites.length > 1 ? ` 외 ${sites.length - 1}곳` : "";
@@ -663,14 +667,12 @@ async function handleImpact(msg: ImpactMessage): Promise<void> {
       ? `\n${cut(d.before, 90)} → ${cut(d.after, 90)}`
       : "";
   const target = cut(matched, 80);
-  // 자기 변경 → 호출부 리마인더(info): "방금 바꾼 게 네 다른 파일에서도 쓰인다, 확인해".
-  // 남의 변경 → 영향 알림(계약 깨짐=warning, 그 외 info). 둘 다 길이 제한으로 스팸 방지.
+  // 위험만 토스트로 — 위험도(🔴 높음)를 앞세워 한눈에. 자기/남 표현만 구분.
   const text = mine
-    ? `🌊 방금 바꾼 ${cut(msg.file, 60)} → 너의 ${target}${at} 에서도 쓰임 — 확인해${how}`
-    : `🌊 ${cut(msg.author, 40)} · ${cut(msg.repo, 30)}/${cut(msg.file, 80)} → 너의 ${target} 영향${at}: ${cut(reason, 120)}${how}`;
+    ? `🔴 높음 — 방금 바꾼 ${cut(msg.file, 56)} → 너의 ${target}${at} 에서도 쓰임, 확인해${how}`
+    : `🔴 높음 — ${cut(msg.author, 36)} · ${cut(msg.file, 72)} → 너의 ${target} 부서질 수 있음${at}: ${cut(reason, 110)}${how}`;
   // 팝업의 "열기" → 사용처 줄이 있으면 그 줄로, 없으면 파일로.
-  const show = !mine && msg.severity === "high" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
-  void show(text, "열기").then((pick) => {
+  void vscode.window.showWarningMessage(text, "열기").then((pick) => {
     if (pick === "열기" && matched) void openByHint(sites[0]?.rel ?? matched, sites[0]?.line);
   });
 }
