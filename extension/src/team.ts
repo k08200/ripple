@@ -19,5 +19,3 @@ export function normalizeTeam(remoteUrl: string): string {
     .replace(/\.git$/, "")
     .replace(/\/+$/, "");
 }
-
-// ripple commit-detection live test 172331
