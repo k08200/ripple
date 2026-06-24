@@ -2,7 +2,7 @@
   "name": "ripple",
   "displayName": "Ripple — Live Change Impact",
   "description": "팀원이 함수·타입·스키마를 바꾸면, 그게 네 코드의 어디를 어떻게 깨는지 저장(라이브)·PR 시점에 찔러줍니다. 의존그래프 기반(설정 0).",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "k08200",
   "engines": {
     "vscode": "^1.85.0"

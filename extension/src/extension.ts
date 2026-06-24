@@ -83,7 +83,10 @@ async function ensureIndexed(): Promise<void> {
     const rel = vscode.workspace.asRelativePath(u, false);
     try {
       const bytes = await vscode.workspace.fs.readFile(u);
-      setEntry(rel, extractIndex(rel, Buffer.from(bytes).toString("utf8")));
+      const text = Buffer.from(bytes).toString("utf8");
+      setEntry(rel, extractIndex(rel, text));
+      // 기준선 seed — 에디터로 안 연 파일도 외부 편집(Claude Code·git) diff 가 가능하도록.
+      snapshots.set(u.fsPath, text);
     } catch {
       /* 읽기 실패 파일은 생략 */
     }
@@ -360,31 +363,48 @@ async function sendIndexOp(op: "upsert" | "remove", uri: vscode.Uri): Promise<vo
   }
 }
 
-/** 코드 파일 생성/삭제 감시 → 인덱스 즉시 갱신. (편집은 onSave 가 처리) */
+/** 코드 파일 생성/삭제/편집 감시. 편집(onDidChange)은 에디터 저장이 아닌 디스크 변경
+ *  — Claude Code·git·외부 도구의 수정까지 잡는다. 에디터 저장은 onSave 가 먼저 처리. */
 function createFileWatcher(): vscode.Disposable {
   const w = vscode.workspace.createFileSystemWatcher(CODE_GLOB);
   return vscode.Disposable.from(
     w,
     w.onDidCreate((uri) => void sendIndexOp("upsert", uri)),
     w.onDidDelete((uri) => void sendIndexOp("remove", uri)),
+    w.onDidChange((uri) => void onDiskChange(uri)),
   );
+}
+
+/** 파일 현재 내용을 기준선과 비교해 변경이면 두뇌로 전송. 에디터 저장/디스크 변경 공용. */
+function sendChange(fsPath: string, rel: string, after: string): void {
+  const before = snapshots.get(fsPath) ?? after;
+  const diff = lineDiff(before, after);
+  snapshots.set(fsPath, after); // 기준선 갱신 — 다음 비교의 출발점(중복 전송도 방지)
+  if (!diff) return; // 기준선과 동일 → 보낼 게 없음
+  const index = extractIndex(rel, after);
+  setEntry(rel, index);
+  send({ type: "change", userId: userId(), repo: repoName(), file: rel, diff, index });
+  log(`변경 전송: ${rel}`);
 }
 
 function onSave(doc: vscode.TextDocument): void {
   if (!isTracked(doc)) return;
-  const before = snapshots.get(doc.uri.fsPath) ?? doc.getText();
-  const after = doc.getText();
-  const diff = lineDiff(before, after);
-  snapshots.set(doc.uri.fsPath, after);
-  if (!diff) return; // 기준선과 동일 → 보낼 게 없음
+  // 에디터 저장이 먼저 기준선을 after 로 올려두면, 뒤따르는 디스크 감시(onDiskChange)는
+  // 기준선==디스크라 자연히 스킵된다 → 중복 전송 없음.
+  sendChange(doc.uri.fsPath, vscode.workspace.asRelativePath(doc.uri, false), doc.getText());
+}
 
-  const rel = vscode.workspace.asRelativePath(doc.uri, false);
-  const repo = repoName();
-  // 저장된 파일의 인덱스를 새로 떠서 맵에 반영 + 백엔드로 동봉 전송 (세션 중에도 최신 유지).
-  const index = extractIndex(rel, after);
-  setEntry(rel, index);
-  send({ type: "change", userId: userId(), repo, file: rel, diff, index });
-  log(`변경 전송: ${rel}`);
+/** 디스크에서 직접 바뀐 파일(Claude Code·git·외부 편집)을 잡는다 — onSave 가 안 도는 경로. */
+async function onDiskChange(uri: vscode.Uri): Promise<void> {
+  if (uri.scheme !== "file") return;
+  const rel = vscode.workspace.asRelativePath(uri, false);
+  if (/(^|\/)(node_modules|\.git|dist|build|out|\.next|vendor)\//.test(rel)) return;
+  try {
+    const after = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+    sendChange(uri.fsPath, rel, after);
+  } catch {
+    /* 읽기 실패 무시 */
+  }
 }
 
 async function connect(): Promise<void> {
